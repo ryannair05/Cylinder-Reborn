@@ -365,8 +365,9 @@ static BOOL manipulate_step(UIView *view, float offset, int funcIndex)
         if (_randomize) {
             funcIndex = arc4random_uniform(_scripts.count);
         }
-        else {
-            funcIndex--;
+        else if (funcIndex == _scripts.count) {
+            lua_pop(L, 1);
+            return false;
         }
         manipulate_step(view, offset, funcIndex);
     }
@@ -387,6 +388,6 @@ inline BOOL manipulate(UIView *view, float offset, u_int32_t rand)
         {
             manipulate_step(view, offset, i);
         }
-        return true;
+        return _scripts.count > 0;
     }
 }

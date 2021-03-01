@@ -5,6 +5,8 @@
 
 static BOOL _enabled;
 static u_int32_t _randSeedForCurrentPage;
+static SBIconView *neededView;
+static NSMutableArray *frameArray;
 
 void reset_icon_layout(UIView *self)
 {
@@ -12,71 +14,98 @@ void reset_icon_layout(UIView *self)
     [self.layer restorePosition];
     self.alpha = 1;
     self.wasModifiedByCylinder = false;
-    for(UIView *v in self.subviews)
+    for(SBIconView *v in self.subviews)
     {
-        v.layer.transform = CATransform3DIdentity;
-        [v.layer restorePosition];
-        v.alpha = 1;
+        if ([v isMemberOfClass:%c(SBIconView)]) {
+            v.layer.transform = CATransform3DIdentity;
+            [v.layer restorePosition];
+            v.alpha = 1;
+        }
     }
 }
 
-void page_swipe(UIScrollView *scrollView, int page)
+void page_swipe(SBIconScrollView *scrollView, int page)
 {
     CGRect eye = {scrollView.contentOffset, scrollView.frame.size};
 
-    if (page == scrollView.subviews.count-1) {
-        page--;
+    if (neededView) {
+        if (page > scrollView.subviews.count-2) {
+            page = scrollView.subviews.count-2;
+        }
+
+        for (int i = page; i <= page + 1; i++) 
+        {
+            if ([frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)]) {
+                continue;
+            }
+
+            UIView *view = scrollView.subviews[i];
+            if (view.subviews.count < 1 || ![view.subviews[0] isMemberOfClass:%c(SBIconView)]) continue;
+            
+            // make a dictionary of the frames of all the icons
+            NSMutableDictionary *frames = [[NSMutableDictionary alloc] init];
+
+            for (SBIconView* iconview in view.subviews) {
+                [frames setObject:NSStringFromCGRect([iconview frame]) forKey:[iconview.icon displayName]];
+            }
+            [frameArray replaceObjectAtIndex:i withObject:frames.copy];
+        }
     }
 
-    for (int i = page; i <= page + 1; i++) {
-        UIView *view = scrollView.subviews[i];
-
+    for (int i = 0; i < scrollView.subviews.count; i++) {
+        SBIconListView *view = scrollView.subviews[i];
+        // make sure it is an SBIconListView and actually has icons
         if (view.subviews.count < 1 || ![view.subviews[0] isMemberOfClass:%c(SBIconView)]) continue;
-
-        if (view.wasModifiedByCylinder)
-        {
-            reset_icon_layout(view);
-        }
 
         if(CGRectIntersectsRect(eye, view.frame))
         {
+            if (view.wasModifiedByCylinder)
+            {
+                reset_icon_layout(view);
+                [view layoutIconsNow];
+            }
+
+            if (neededView && [frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)] && [frameArray[i] objectForKey:[neededView.icon displayName]]) {
+                neededView.frame = CGRectFromString([frameArray[i] valueForKey:[neededView.icon displayName]]);
+                [view addSubview:neededView];
+            }
+
             const float offset = scrollView.contentOffset.x - view.frame.origin.x;
 
-            _enabled = manipulate(view, offset, _randSeedForCurrentPage); //defined in luastuff.m
+            _enabled = manipulate((UIView *) view, offset, _randSeedForCurrentPage); //defined in luastuff.m
             view.wasModifiedByCylinder = true;
-
         }
     }
 }
 
 
-void end_scroll(UIScrollView *self)
+void end_scroll(SBIconScrollView *self)
 {
-    for(UIView *view in [self subviews]) {
-        if([view isMemberOfClass:%c(SBIconListView)]) reset_icon_layout(view);
+    for(SBIconListView *view in [self subviews]) {
+        if([view isMemberOfClass:%c(SBIconListView)]) {
+            reset_icon_layout(view);
+        }
     }
 }
 
 @interface SBFolderView : UIView 
 @property (assign,getter=isRotating,nonatomic) BOOL rotating;
 @property (nonatomic,readonly) long long currentPageIndex;
--(id)scrollView;
 @end 
 
 %hook SBFolderView //SBIconController
--(void)scrollViewDidScroll:(UIScrollView *)scrollView
+-(void)scrollViewDidScroll:(SBIconScrollView *)scrollView
 {   
     %orig;
 
-    //these are for detecting if the scroll is actually just
-    //a rotation. if its a rotation, then dont
+    //if its a rotation, then dont
     //cylinder-ize it.
     if(!_enabled || self.isRotating) return;
 
     page_swipe(scrollView, self.currentPageIndex - 99);
 }
 
--(void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+-(void)scrollViewDidEndDecelerating:(SBIconScrollView *)scrollView
 {
     %orig;
 
@@ -95,7 +124,6 @@ void end_scroll(UIScrollView *self)
 }
 
 %end
-
 
 static void loadPrefs()
 {
@@ -126,11 +154,46 @@ static void loadPrefs()
 {
     %orig;
 	loadPrefs();
+
+    if (@available(iOS 14, *)) {
+        frameArray = [NSMutableArray arrayWithCapacity:11]; // the maximum number of icon pages is 11
+        for (int i = 0; i < 11; i++) {
+            [frameArray insertObject:[NSNumber numberWithInt:i] atIndex:i];
+        }
+    }
 }
 %end
 
+%group animationHack
+
+%hook SBIconView
+- (void)prepareToCrossfadeImageWithView:(UIView *)arg1 anchorPoint:(CGPoint)arg2 options:(NSUInteger)arg3{
+    if (arg3 == 3) { // If arg3 equals 2, then it is a folder which we don't want to modify
+        neededView = self;
+    }
+    return %orig;
+}
+%end
+
+%hook SBIconImageCrossfadeView
+-(void)cleanup {
+    if (neededView) {
+        [neededView removeFromSuperview];
+        neededView = nil;
+    }
+    return %orig;
+}
+%end
+%end
+
+
 %ctor{
     %init;
+
+    if (@available(iOS 14, *)) { // Only works on iOS 14, support for older versions is needed
+        %init(animationHack);
+        // This is nowhere close to a proper fix, but it's the best solution I could come up with
+    }
 
     //listen to notification center (for settings change)
     CFNotificationCenterRef r = CFNotificationCenterGetDarwinNotifyCenter();
