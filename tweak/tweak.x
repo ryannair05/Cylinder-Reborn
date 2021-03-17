@@ -24,16 +24,13 @@ void reset_icon_layout(UIView *self)
     }
 }
 
-void page_swipe(SBIconScrollView *scrollView, int page)
+void page_swipe(SBIconScrollView *scrollView)
 {
     CGRect eye = {scrollView.contentOffset, scrollView.frame.size};
 
     if (neededView) {
-        if (page > scrollView.subviews.count-2) {
-            page = scrollView.subviews.count-2;
-        }
 
-        for (int i = page; i <= page + 1; i++) 
+        for (int i = 0; i < scrollView.subviews.count; i++)
         {
             if ([frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)]) {
                 continue;
@@ -65,7 +62,7 @@ void page_swipe(SBIconScrollView *scrollView, int page)
                 [view layoutIconsNow];
             }
 
-            if (neededView && [frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)] && [frameArray[i] objectForKey:[neededView.icon displayName]]) {
+            else if (neededView && [frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)] && [frameArray[i] objectForKey:[neededView.icon displayName]]) {
                 neededView.frame = CGRectFromString([frameArray[i] valueForKey:[neededView.icon displayName]]);
                 [view addSubview:neededView];
             }
@@ -102,7 +99,7 @@ void end_scroll(SBIconScrollView *self)
     //cylinder-ize it.
     if(!_enabled || self.isRotating) return;
 
-    page_swipe(scrollView, self.currentPageIndex - 99);
+    page_swipe(scrollView);
 }
 
 -(void)scrollViewDidEndDecelerating:(SBIconScrollView *)scrollView
@@ -118,7 +115,7 @@ void end_scroll(SBIconScrollView *self)
 // For iOS 13. SpringBoard "optimizes" the icon visibility by only showing the bare
 // minimum. I have no idea why this works, but it does. An interesting stack trace can
 // be found by forcing a crash in -[SBRecycledViewsContainer addSubview:]. Probably best to decompile this function in IDA or something.
--(void)updateVisibleColumnRangeWithTotalLists:(unsigned long long)arg1 columnsPerList:(unsigned long long)arg2 iconVisibilityHandling:(long long)arg3
+-(void)updateVisibleColumnRangeWithTotalLists:(NSUInteger)arg1 columnsPerList:(NSUInteger)arg2 iconVisibilityHandling:(NSInteger)arg3
 {
     return %orig(arg1, arg2, 0);
 }
