@@ -11,7 +11,18 @@ void write_error(const char *error);
 @property (nonatomic,copy,readonly) NSString * displayName; 
 @end 
 
-@interface SBIconView : UIView
+
+@interface SBIconImageView : UIView
+@end 
+
+@interface SBIconImageCrossfadeView : UIView
+@end 
+
+@interface SBIconView : UIView {
+    SBIconImageView* _iconImageView;
+    SBIconImageCrossfadeView* _crossfadeView;
+}
+
 @property (nonatomic,retain) SBIcon *icon;
 @end 
 
@@ -23,8 +34,30 @@ NS_CLASS_AVAILABLE_IOS(4_0) @interface SBIconListView : UIView
 
 -(NSArray *)icons;
 -(void)layoutIconsNow;
+- (void)setIconsNeedLayout;
+
+- (void)setAlphaForAllIcons:(CGFloat)alpha;
+- (void)enumerateIconViewsUsingBlock:(void(^)())block;
+
 @end
 
-
 @interface SBIconScrollView : UIScrollView
+@end 
+
+@interface SBFolder : NSObject
+@property (nonatomic, assign, readonly) NSUInteger listCount;
+@end
+
+@interface SBRootFolder : SBFolder
+@end
+
+@interface SBIconController : UIViewController
++ (id)sharedInstance;
+@property (nonatomic, assign, readonly) SBRootFolder *rootFolder;
+@end
+
+@interface SBFolderView : UIView 
+@property (assign,getter=isRotating,nonatomic) BOOL rotating;
+
+- (void)enumerateIconListViewsUsingBlock:(void(^)())block;
 @end 

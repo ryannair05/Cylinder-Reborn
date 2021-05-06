@@ -5,38 +5,35 @@
 
 static BOOL _enabled;
 static u_int32_t _randSeedForCurrentPage;
-static SBIconView *neededView;
+__weak static SBIconView *neededView;
 static NSMutableArray *frameArray;
 
-void reset_icon_layout(UIView *self)
+void reset_icon_layout(__unsafe_unretained SBIconListView *self)
 {
     self.layer.transform = CATransform3DIdentity;
     [self.layer restorePosition];
     self.alpha = 1;
-    self.wasModifiedByCylinder = false;
-    for(SBIconView *v in self.subviews)
-    {
-        if ([v isMemberOfClass:%c(SBIconView)]) {
-            v.layer.transform = CATransform3DIdentity;
-            [v.layer restorePosition];
-            v.alpha = 1;
-        }
-    }
+    
+    [self enumerateIconViewsUsingBlock:^(SBIconView *v)  {
+        v.layer.transform = CATransform3DIdentity;
+        [v.layer restorePosition];
+    }];
+
+    [self setAlphaForAllIcons:1];
 }
 
-void page_swipe(SBIconScrollView *scrollView)
+void page_swipe(SBFolderView *self, SBIconScrollView *scrollView)
 {
     CGRect eye = {scrollView.contentOffset, scrollView.frame.size};
 
     if (neededView) {
-
         for (int i = 0; i < scrollView.subviews.count; i++)
         {
             if ([frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)]) {
                 continue;
             }
 
-            UIView *view = scrollView.subviews[i];
+            __unsafe_unretained UIView *view = scrollView.subviews[i];
             if (view.subviews.count < 1 || ![view.subviews[0] isMemberOfClass:%c(SBIconView)]) continue;
             
             // make a dictionary of the frames of all the icons
@@ -50,23 +47,22 @@ void page_swipe(SBIconScrollView *scrollView)
     }
 
     for (int i = 0; i < scrollView.subviews.count; i++) {
-        SBIconListView *view = scrollView.subviews[i];
+        __unsafe_unretained SBIconListView *view = scrollView.subviews[i];
         // make sure it is an SBIconListView and actually has icons
         if (view.subviews.count < 1 || ![view.subviews[0] isMemberOfClass:%c(SBIconView)]) continue;
 
+        if (view.wasModifiedByCylinder)
+        {
+            reset_icon_layout(view);
+        }
+        else if (neededView && [frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)] && [frameArray[i] objectForKey:[neededView.icon displayName]]) {
+            neededView.frame = CGRectFromString([frameArray[i] valueForKey:[neededView.icon displayName]]);
+            neededView.layer.transform = CATransform3DIdentity;
+            [view addSubview:neededView];
+        }
+
         if(CGRectIntersectsRect(eye, view.frame))
         {
-            if (view.wasModifiedByCylinder)
-            {
-                reset_icon_layout(view);
-                [view layoutIconsNow];
-            }
-
-            else if (neededView && [frameArray[i] isKindOfClass:%c(__NSFrozenDictionaryM)] && [frameArray[i] objectForKey:[neededView.icon displayName]]) {
-                neededView.frame = CGRectFromString([frameArray[i] valueForKey:[neededView.icon displayName]]);
-                [view addSubview:neededView];
-            }
-
             const float offset = scrollView.contentOffset.x - view.frame.origin.x;
 
             _enabled = manipulate((UIView *) view, offset, _randSeedForCurrentPage); //defined in luastuff.m
@@ -76,19 +72,14 @@ void page_swipe(SBIconScrollView *scrollView)
 }
 
 
-void end_scroll(SBIconScrollView *self)
+void end_scroll(__unsafe_unretained SBFolderView *self)
 {
-    for(SBIconListView *view in [self subviews]) {
-        if([view isMemberOfClass:%c(SBIconListView)]) {
-            reset_icon_layout(view);
-        }
-    }
+    [self enumerateIconListViewsUsingBlock:^(SBIconListView *view)  {
+         reset_icon_layout(view);
+         view.wasModifiedByCylinder = false;
+         [view setIconsNeedLayout];
+    }];
 }
-
-@interface SBFolderView : UIView 
-@property (assign,getter=isRotating,nonatomic) BOOL rotating;
-@property (nonatomic,readonly) long long currentPageIndex;
-@end 
 
 %hook SBFolderView //SBIconController
 -(void)scrollViewDidScroll:(SBIconScrollView *)scrollView
@@ -99,7 +90,7 @@ void end_scroll(SBIconScrollView *self)
     //cylinder-ize it.
     if(!_enabled || self.isRotating) return;
 
-    page_swipe(scrollView);
+    page_swipe(self, scrollView);
 }
 
 -(void)scrollViewDidEndDecelerating:(SBIconScrollView *)scrollView
@@ -107,12 +98,12 @@ void end_scroll(SBIconScrollView *self)
     %orig;
 
     if(_enabled) {
-        end_scroll(scrollView);
+        end_scroll(self);
         _randSeedForCurrentPage = arc4random();
     }
 }
 
-// For iOS 13. SpringBoard "optimizes" the icon visibility by only showing the bare
+// For iOS 13, SpringBoard "optimizes" the icon visibility by only showing the bare
 // minimum. I have no idea why this works, but it does. An interesting stack trace can
 // be found by forcing a crash in -[SBRecycledViewsContainer addSubview:]. Probably best to decompile this function in IDA or something.
 -(void)updateVisibleColumnRangeWithTotalLists:(NSUInteger)arg1 columnsPerList:(NSUInteger)arg2 iconVisibilityHandling:(NSInteger)arg3
@@ -153,8 +144,10 @@ static void loadPrefs()
 	loadPrefs();
 
     if (@available(iOS 14, *)) {
-        frameArray = [NSMutableArray arrayWithCapacity:11]; // the maximum number of icon pages is 11
-        for (int i = 0; i < 11; i++) {
+        const int count = [[[%c(SBIconController) sharedInstance] rootFolder] listCount] + 2; // get number of icon pages
+        frameArray = [NSMutableArray arrayWithCapacity:count]; 
+
+        for (int i = 0; i < count; i++) {
             [frameArray insertObject:[NSNumber numberWithInt:i] atIndex:i];
         }
     }

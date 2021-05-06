@@ -2,14 +2,7 @@ THEOS_DEVICE_IP = 192.168.1.245
 
 FINALPACKAGE = 1
 
-export XCODE_12_SLICE ?= 0
-
-ifeq ($(XCODE_12_SLICE), 1)
-	export ARCHS = arm64e
-else
-	export ARCHS = arm64 arm64e
-	export PREFIX = $(THEOS)/toolchain/Xcode.xctoolchain/usr/bin/
-endif
+export PREFIX = $(THEOS)/toolchain/Xcode.xctoolchain/usr/bin/
 
 ifeq ($(THEOS_CURRENT_ARCH),arm64)
 	export TARGET = iphone:clang:13.5:11.0

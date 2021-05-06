@@ -4,7 +4,6 @@ return function(page, offset, screen_width, screen_height)
 
   for i, icon in subviews(page) do
     local icon_centerx = icon.x + icon.width/2
-    local icon_offsetx =  math.abs((page.width/2)-icon_centerx)
 	local percent_pright = (icon_centerx) / page.width
     local percent_pleft = (page.width-icon_centerx) / page.width
 

@@ -43,18 +43,17 @@ int l_uiview_index(lua_State *L)
 
 static int l_uiview_index_subviews(lua_State *L)
 {
-    UIView *self = (__bridge UIView *)lua_touserdata(L, 1);
+    SBIconListView *self = (__bridge SBIconListView *)lua_touserdata(L, 1);
     if(![self isKindOfClass:objc_getClass("SBIconListView")]) {
         return luaL_error(L, "trying to get icon from object that is not a list");
     }
-    NSArray *views = self.subviews;
     lua_newtable(L);
-    for(int i = 0; i < self.subviews.count; i++)
-    {
-        lua_pushnumber(L, i+1);
-        l_push_view(L, views[i]);
+
+    [self enumerateIconViewsUsingBlock:^(SBIconView *view, NSUInteger idx)  {
+        lua_pushnumber(L, idx+1);
+        l_push_view(L, view);
         lua_settable(L, -3);
-    }
+    }];
     return 1;
 }
 

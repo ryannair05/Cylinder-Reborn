@@ -128,9 +128,7 @@ static int l_calayer_setindex(lua_State *L)
             CHECK_NAN(x, "'x'");
 
             [self savePosition];
-            CGPoint pos = self.position;
-            pos.x = x;
-            self.position = pos;
+            self.position = CGPointMake(x, self.position.y);
         }
         else if(!strcmp(key, "y"))
         {
@@ -140,9 +138,7 @@ static int l_calayer_setindex(lua_State *L)
             CHECK_NAN(y, "'y'");
 
             [self savePosition]; //TODO implement this and resetPosition.... prolly needa refactor some shit
-            CGPoint pos = self.position;
-            pos.y = y;
-            self.position = pos;
+            self.position = CGPointMake(self.position.x, y);
         }
         else if(!strcmp(key, "transform"))
         {

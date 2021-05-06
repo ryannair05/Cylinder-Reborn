@@ -1,5 +1,5 @@
 #import "luastuff.h"
-#import "lua/lauxlib.h"
+#include <libgen.h>
 #import "lua/lualib.h"
 // #import "macros.h"
 #import "lua_UIView.h"
@@ -136,7 +136,7 @@ static void changedofile(const char *folder, const char *func)
 
 static void set_environment(const char *script)
 {
-    const char *folder = [[[NSString stringWithUTF8String:script].pathComponents objectAtIndex:0] UTF8String];
+    const char *folder = dirname((char *)script);
     //()
     lua_newtable(L);
     lua_newtable(L);
@@ -154,7 +154,8 @@ static void set_environment(const char *script)
 
 static int open_script(const char *script)
 {
-    const char *path = [NSString stringWithFormat:@"/Library/Cylinder/%s.lua", script].UTF8String;
+    char path[strlen(script) + 22];
+    sprintf(path, "/Library/Cylinder/%s.lua", script);
 
     //load our file and save the function we want to call
     BOOL loaded = luaL_loadfile(L, path) == 0;
@@ -343,7 +344,7 @@ static void write_file(const char *msg, const char *filename)
     [fileHandle closeFile];
 }
 
-static BOOL manipulate_step(UIView *view, float offset, int funcIndex)
+static BOOL manipulate_step(__unsafe_unretained UIView *view, float offset, int funcIndex)
 {
     const int func = [[_scripts objectAtIndex:funcIndex] intValue];
     lua_rawgeti(L, LUA_REGISTRYINDEX, func);
@@ -375,7 +376,7 @@ static BOOL manipulate_step(UIView *view, float offset, int funcIndex)
     return success;
 }
 
-inline BOOL manipulate(UIView *view, float offset, u_int32_t rand)
+inline BOOL manipulate(__unsafe_unretained UIView *view, float offset, u_int32_t rand)
 {
     if(_randomize)
     {
