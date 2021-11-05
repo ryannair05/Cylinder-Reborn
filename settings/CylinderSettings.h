@@ -3,7 +3,7 @@
 #import "CLEffect.h"
 
 @interface CylinderSettingsListController: PSListController
-@property (nonatomic, retain, readonly) NSDictionary *settings;
+@property (nonatomic, retain, readonly) NSUserDefaults *settings;
 - (void)setSelectedEffects:(NSArray *)effects;
 -(void)setSelectedFormula:(NSString *)formula;
 -(void)setFormulas:(NSDictionary *)formulas;

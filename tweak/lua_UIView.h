@@ -1,5 +1,5 @@
-#import "lua/lua.h"
-#import "lua/lauxlib.h"
+#import "../lua/lua.h"
+#import "../lua/lauxlib.h"
 #import "CALayer+Cylinder.h"
 #import "../Defines.h"
 

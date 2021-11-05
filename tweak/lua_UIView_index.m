@@ -22,7 +22,9 @@ int l_uiview_index(lua_State *L)
         if(index >= 0 && index < self.subviews.count)
         {
             UIView *view = self.subviews[index];
-            return l_push_view(L, view);
+            if (![view isKindOfClass:objc_getClass("SBFTouchPassThroughView")]) {
+                return l_push_view(L, view);
+            }
         }
     }
     else if(lua_isstring(L, 2))
@@ -179,6 +181,10 @@ static int l_transform_rotate(lua_State *L)
 
     UIView *self = (__bridge UIView *)lua_touserdata(L, 1);
 
+    if ([self isKindOfClass:objc_getClass("MTMaterialView")]) {
+        return 0;
+    }
+
     CATransform3D transform = self.layer.transform;
     float pitch = 0, yaw = 0, roll = 0;
     if(!lua_isnumber(L, 3))
@@ -206,9 +212,12 @@ static int l_transform_rotate(lua_State *L)
 
 static int l_transform_translate(lua_State *L)
 {
-    // CHECK_UIVIEW(L, 1);
 
     UIView *self = (__bridge UIView *)lua_touserdata(L, 1);
+
+    if ([self isKindOfClass:objc_getClass("MTMaterialView")]) {
+        return 0;
+    }
 
     CATransform3D transform = self.layer.transform;
     float x = lua_tonumber(L, 2), y = lua_tonumber(L, 3), z = lua_tonumber(L, 4);
@@ -230,9 +239,11 @@ static int l_transform_translate(lua_State *L)
 
 static int l_transform_scale(lua_State *L)
 {
-    // CHECK_UIVIEW(L, 1);
-
     UIView *self = (__bridge UIView *)lua_touserdata(L, 1);
+
+    if ([self isKindOfClass:objc_getClass("MTMaterialView")]) {
+        return 0;
+    }
 
     CATransform3D transform = self.layer.transform;
     float x = lua_tonumber(L, 2);

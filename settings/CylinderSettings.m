@@ -6,7 +6,7 @@
 {
     NSString *_defaultFooterText;
 }
-@property (nonatomic, retain, readwrite) NSMutableDictionary *settings;
+@property (nonatomic, retain, readwrite) NSUserDefaults *settings;
 @end
 
 @implementation CylinderSettingsListController
@@ -16,8 +16,8 @@
     self = [super init];
 
     if (self) {
-        self.settings = ([NSMutableDictionary dictionaryWithContentsOfFile:PREFS_PATH] ?: DefaultPrefs);
-        if(![[_settings valueForKey:PrefsEffectKey] isKindOfClass:NSArray.class]) [_settings setValue:nil forKey:PrefsEffectKey];
+        self.settings = [[NSUserDefaults alloc] initWithSuiteName:@"com.ryannair05.cylinder"];
+        [self.settings registerDefaults:@{ PrefsEffectKey: DEFAULT_EFFECTS }];
         _defaultFooterText = [[NSDictionary dictionaryWithContentsOfFile:@"/Library/PreferenceBundles/CylinderSettings.bundle/en.lproj/CylinderSettings.strings"] objectForKey:@"FOOTER_TEXT"];
     }
     return self;
@@ -28,17 +28,6 @@
 		_specifiers = [self loadSpecifiersFromPlistName:@"CylinderSettings" target:self];
 	}
 	return _specifiers;
-}
-
-- (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier {
-
-    [_settings setValue:value forKey:specifier.properties[@"key"]];
-
-    [self writeSettings];
-}
-
-- (id)readPreferenceValue:(PSSpecifier *)specifier {
-    return ([_settings objectForKey:specifier.properties[@"key"]]) ?: specifier.properties[@"default"];
 }
 
 - (void)visitWebsite:(id)sender {
@@ -81,11 +70,6 @@
 }
 
 - (void)writeSettings {
-    NSData *data = [NSPropertyListSerialization dataWithPropertyList:self.settings format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
-
-	if (!data)
-		return;
-	[data writeToFile:PREFS_PATH atomically:NO];
 
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), (CFStringRef) kCylinderSettingsChanged, NULL, NULL, YES);
 }

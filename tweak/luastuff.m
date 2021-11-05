@@ -1,6 +1,6 @@
 #import "luastuff.h"
 #include <libgen.h>
-#import "lua/lualib.h"
+#import "../lua/lualib.h"
 // #import "macros.h"
 #import "lua_UIView.h"
 
@@ -186,8 +186,7 @@ static int open_script(const char *script)
 
 BOOL init_lua(NSArray *scripts, BOOL random)
 {
-    if(scripts == nil) scripts = DEFAULT_EFFECTS;
-    else if(scripts.count == 0) return false;
+    if(scripts.count == 0) return false;
 
     _randomize = random;
     close_lua();

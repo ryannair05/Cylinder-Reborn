@@ -1,5 +1,5 @@
 #import <QuartzCore/QuartzCore.h>
-#import "lua/lua.h"
+#import "../lua/lua.h"
 #import <UIKit/UIKit.h>
 #import "CALayer+Cylinder.h"
 

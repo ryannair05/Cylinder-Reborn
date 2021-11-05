@@ -109,24 +109,14 @@ static CLEffectsController *sharedController = nil;
     NSArray *effects = [ctrl.settings objectForKey:PrefsEffectKey];
     self.selectedEffects = [NSMutableArray array];
 
-    // if([effects isKindOfClass:NSArray.class])
-    if(effects)
+    for(NSDictionary *dict in effects)
     {
-        for(NSDictionary *dict in effects)
-        {
-            NSString *name = [dict objectForKey:PrefsEffectKey];
-            NSString *dir = [dict objectForKey:PrefsEffectDirKey];
-            CLEffect *effect = [self effectWithName:name inDirectory:dir];
-            effect.selected = true;
-            if(effect)
-                [self.selectedEffects addObject:effect];
-        }
-    }
-    else
-    {
-        CLEffect *effect = [self effectWithName:DEFAULT_EFFECT inDirectory:DEFAULT_DIRECTORY];
+        NSString *name = [dict objectForKey:PrefsEffectKey];
+        NSString *dir = [dict objectForKey:PrefsEffectDirKey];
+        CLEffect *effect = [self effectWithName:name inDirectory:dir];
         effect.selected = true;
-        [self.selectedEffects addObject:effect];
+        if(effect)
+            [self.selectedEffects addObject:effect];
     }
 }
 
