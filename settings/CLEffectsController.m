@@ -104,8 +104,12 @@ static CLEffectsController *sharedController = nil;
 {
     self.effects = [NSMutableArray array];
     CylinderSettingsListController *ctrl = (CylinderSettingsListController*)self.parentController;
-    [self addEffectsFromDirectory:kEffectsDirectory];
-
+    #ifdef THEOS_PACKAGE_INSTALL_PREFIX
+    [self addEffectsFromDirectory:@"/var/jb/Library/Cylinder"];
+    #else
+    [self addEffectsFromDirectory:@"/Library/Cylinder"];
+    #endif
+   
     NSArray *effects = [ctrl.settings objectForKey:PrefsEffectKey];
     self.selectedEffects = [NSMutableArray array];
 
@@ -164,7 +168,11 @@ static CLEffectsController *sharedController = nil;
 -(void)setCellIcon:(UITableViewCell *)cell effect:(CLEffect *)effect
 {
     if(effect.broken)
-        cell.imageView.image = [UIImage imageWithContentsOfFile:BUNDLE_PATH "error.png"];
+        #ifdef THEOS_PACKAGE_INSTALL_PREFIX
+        cell.imageView.image = [UIImage imageWithContentsOfFile:@"/var/jb/Library/PreferenceBundles/CylinderSettings.bundle/error.png"];
+        #else
+        cell.imageView.image = [UIImage imageWithContentsOfFile:@"/Library/PreferenceBundles/CylinderSettings.bundle/error.png"];
+        #endif
 }
 
 -(id)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath

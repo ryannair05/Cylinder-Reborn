@@ -2,9 +2,9 @@
 
 ![](https://github.com/rweichler/cylinder/blob/cb8f000dfb1045b9b7cb872ba9b8c843f7f73ebc/code.png)
 
-## Latest version: 1.0.0
+## Latest version: 1.1.1
 
-[Here](https://github.com/ryannair05/Cylinder-Reborn/blob/master/packages/com.ryannair05.cylinder_1.0~ryannair05_iphoneos-arm.deb?raw=true)'s the deb.
+[Here](https://github.com/ryannair05/Cylinder-Reborn/blob/master/packages/com.ryannair05.cylinder_1.1.1~ryannair05_iphoneos-arm.deb?raw=true)'s the deb.
 
 ## what???
 
@@ -29,7 +29,7 @@ your name in /Library/Cylinder on your phone (like
 /Library/Cylinder/rweichler), drop your scripts in,
 and it should appear in settings (no respring required).
 
-Compatible with iOS 11-14.
+Compatible with iOS 11-15.
 
 # How to build/install this
 

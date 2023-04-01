@@ -155,7 +155,11 @@ static void set_environment(const char *script)
 static int open_script(const char *script)
 {
     char path[strlen(script) + 22];
+    #ifdef THEOS_PACKAGE_INSTALL_PREFIX
+    sprintf(path, "/var/jb/Library/Cylinder/%s.lua", script);
+    #else
     sprintf(path, "/Library/Cylinder/%s.lua", script);
+    #endif
 
     //load our file and save the function we want to call
     BOOL loaded = luaL_loadfile(L, path) == 0;
@@ -229,7 +233,11 @@ static int l_loadfile_override(lua_State *L)
     const char *subfolder = lua_tostring(L, lua_upvalueindex(2));
 
     if(file != NULL)
+        #ifdef THEOS_PACKAGE_INSTALL_PREFIX
+        file = [NSString stringWithFormat:@"/var/jb/Library/Cylinder/%s/%s", subfolder, file].UTF8String;
+        #else
         file = [NSString stringWithFormat:@"/Library/Cylinder/%s/%s", subfolder, file].UTF8String;
+        #endif
 
     int top = lua_gettop(L);
     lua_pushvalue(L, lua_upvalueindex(1));

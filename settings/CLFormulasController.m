@@ -254,7 +254,12 @@
     if(indexPath.section == ADD_SECTION)
     {
         cell.textLabel.text = LOCALIZE(@"CREATE_NEW_FORMULA", @"Create new formula");
-        cell.imageView.image = [UIImage imageWithContentsOfFile:BUNDLE_PATH "plus.png"];
+        #ifdef THEOS_PACKAGE_INSTALL_PREFIX
+        cell.imageView.image = [UIImage imageWithContentsOfFile:@"/var/jb/Library/PreferenceBundles/CylinderSettings.bundle/plus.png"];
+        #else
+        cell.imageView.image = [UIImage imageWithContentsOfFile:@"/Library/PreferenceBundles/CylinderSettings.bundle/plus.png"];
+        #endif
+
     }
     else if(indexPath.section == FORMULA_SECTION)
     {

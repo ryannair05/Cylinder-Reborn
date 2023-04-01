@@ -117,12 +117,16 @@ static int l_uiview_index_max_icons(lua_State *L)
     
     SBIconListView *self = (__bridge SBIconListView *)lua_touserdata(L, 1);
 
+    #ifdef THEOS_PACKAGE_INSTALL_PREFIX
+    lua_pushnumber(L, self.maximumIconCount);
+    #else
     if (@available(iOS 13, *)) {
         lua_pushnumber(L, self.maximumIconCount);
     } 
     else {
         lua_pushnumber(L, self.maxIcons);
     }
+    #endif
 
     return 1;
 }

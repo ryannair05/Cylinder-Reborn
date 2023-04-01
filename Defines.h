@@ -36,10 +36,6 @@
 #define kCylinderSettingsChanged         @"com.ryannair05.cylinder/settingsChanged"
 #define kCylinderSettingsRefreshSettings @"com.ryannair05.cylinder/refreshSettings"
 
-#define BUNDLE_PATH @"/Library/PreferenceBundles/CylinderSettings.bundle/"
-
-#define kEffectsDirectory     @"/Library/Cylinder"
-#define kPacksDirectory      @"/Library/Cylinder/Packs"
 #define DEFAULT_EFFECTS      [NSArray arrayWithObjects:[NSDictionary dictionaryWithObjectsAndKeys:DEFAULT_EFFECT, PrefsEffectKey, DEFAULT_DIRECTORY, PrefsEffectDirKey, nil], nil]
 #define DEFAULT_FORMULAS    [NSDictionary dictionary]
 #define DefaultPrefs         [NSMutableDictionary dictionaryWithObjectsAndKeys: DEFAULT_EFFECTS, PrefsEffectKey, DEFAULT_FORMULAS, PrefsFormulaKey, [NSNumber numberWithBool:YES], PrefsEnabledKey, [NSNumber numberWithBool:false], PrefsRandomizedKey, nil]

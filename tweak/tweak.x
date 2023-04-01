@@ -79,6 +79,20 @@ void end_scroll(__unsafe_unretained SBFolderView *self)
     }
 }
 
+%end
+
+%group iOS15
+%hook SBRootFolderView 
+- (void)updateVisibleColumnRangeWithTotalLists:(NSUInteger)arg1 iconVisibilityHandling:(NSInteger)arg2
+{
+    return %orig(arg1, 0);
+}
+%end
+%end
+
+#ifndef THEOS_PACKAGE_INSTALL_PREFIX
+%group iOS14
+%hook SBFolderView 
 // For iOS 13, SpringBoard "optimizes" the icon visibility by only showing the bare
 // minimum. I have no idea why this works, but it does. An interesting stack trace can
 // be found by forcing a crash in -[SBRecycledViewsContainer addSubview:]. Probably best to decompile this function in IDA or something.
@@ -88,6 +102,8 @@ void end_scroll(__unsafe_unretained SBFolderView *self)
 }
 
 %end
+%end
+#endif
 
 static void loadPrefs()
 {
@@ -128,6 +144,15 @@ static void loadPrefs()
 
 %ctor{
     %init;
+
+    if (@available(iOS 15, *)) {
+        %init(iOS15);
+    }
+    #ifndef THEOS_PACKAGE_INSTALL_PREFIX
+    else {
+        %init(iOS14);
+    }
+    #endif
 
     //listen to notification center (for settings change)
     CFNotificationCenterRef r = CFNotificationCenterGetDarwinNotifyCenter();
