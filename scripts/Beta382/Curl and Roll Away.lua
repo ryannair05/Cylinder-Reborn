@@ -8,14 +8,10 @@ return function(page, offset, screen_width, screen_height)
     
     local theta = (2*math.pi)/#page.subviews
     
-    local stage1P = percent*2
-    if (stage1P > 1) then stage1P = 1 end
+    local stage1P = math.min(percent * 2, 1)
+    local stage2P = math.max(math.min((percent - 0.5) * 2, 1), 0)
     
-    local stage2P = (percent-1/2)*2
-    if (stage2P > 1) then stage2P = 1
-    elseif (stage2P < 0) then stage2P = 0 end
-    
-    for i, icon in subviews(page) do
+    for i, icon in ipairs(page.subviews) do
         local iconAngle = theta*(i-1)+stage2P*(math.pi/2)
         
         local begX = icon.x+icon.width/2

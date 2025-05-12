@@ -1,18 +1,14 @@
-local M_PI = 3.14159265
+local M_PI = math.pi
 
 local function animateur(view, width, percent, is_inside)
     local angle = percent*M_PI
     local m = is_inside and 1/3 or -2/3
-    local x = width/2
-    if percent < 0 then x = -x end
-    local i = 0
-    while true do
-        i = i + 1
-        local v = view[i]
-        if v == nil then break end
-        view[i]:translate(3.5*x, 0, 0)
-        view[i]:rotate(m*angle, 0, 1, 0)
-        view[i]:translate(-x*3.5, 0, 0)
+    local x = width * (percent < 0 and -0.5 or 0.5)
+    
+    for i, v in ipairs(view) do
+        v:translate(3.5 * x, 0, 0)
+        v:rotate(m * angle, 0, 1, 0)
+        v:translate(-3.5 * x, 0, 0)
     end
 end
 

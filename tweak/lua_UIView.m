@@ -175,28 +175,28 @@ static int l_nsobject_len(lua_State *L)
 
 const static char *ERR_MALFORMED = "malformed transformation matrix";
 
-#define CALL_TRANSFORM_MACRO(F, ...)    \
-    F(m11, ## __VA_ARGS__);\
-    F(m12, ## __VA_ARGS__);\
-    F(m13, ## __VA_ARGS__);\
-    F(m14, ## __VA_ARGS__);\
-    F(m21, ## __VA_ARGS__);\
-    F(m22, ## __VA_ARGS__);\
-    F(m23, ## __VA_ARGS__);\
-    F(m24, ## __VA_ARGS__);\
-    F(m31, ## __VA_ARGS__);\
-    F(m32, ## __VA_ARGS__);\
-    F(m33, ## __VA_ARGS__);\
-    F(m34, ## __VA_ARGS__);\
-    F(m41, ## __VA_ARGS__);\
-    F(m42, ## __VA_ARGS__);\
-    F(m43, ## __VA_ARGS__);\
-    F(m44, ## __VA_ARGS__);
+#define CALL_TRANSFORM_MACRO(F, ...) \
+    F(m11, ##__VA_ARGS__); \
+    F(m12, ##__VA_ARGS__); \
+    F(m13, ##__VA_ARGS__); \
+    F(m14, ##__VA_ARGS__); \
+    F(m21, ##__VA_ARGS__); \
+    F(m22, ##__VA_ARGS__); \
+    F(m23, ##__VA_ARGS__); \
+    F(m24, ##__VA_ARGS__); \
+    F(m31, ##__VA_ARGS__); \
+    F(m32, ##__VA_ARGS__); \
+    F(m33, ##__VA_ARGS__); \
+    F(m34, ##__VA_ARGS__); \
+    F(m41, ##__VA_ARGS__); \
+    F(m42, ##__VA_ARGS__); \
+    F(m43, ##__VA_ARGS__); \
+    F(m44, ##__VA_ARGS__);
 
 
-#define BASE_TRANSFORM_STEP(M, LUASTATE, I, TRANSFORM)   \
-    lua_pushnumber(LUASTATE, ++I);\
-    lua_pushnumber(LUASTATE, TRANSFORM.M);\
+#define BASE_TRANSFORM_STEP(M, LUASTATE, I, TRANSFORM) \
+    lua_pushinteger(LUASTATE, ++I); \
+    lua_pushnumber(LUASTATE, TRANSFORM.M); \
     lua_settable(LUASTATE, -3);
 
 
@@ -207,13 +207,13 @@ int l_push_base_transform(lua_State *L)
     return 1;
 }
 
-#define FILL_TRANSFORM(M, LUASTATE, I, TRANSFORM)   \
-    lua_pushnumber(LUASTATE, ++I);\
-    lua_gettable(LUASTATE, -3);\
-    if(!lua_isnumber(LUASTATE, -1))\
-        return luaL_error(LUASTATE, ERR_MALFORMED);\
-    TRANSFORM.M = lua_tonumber(LUASTATE, -1);\
-    CHECK_NAN(TRANSFORM.M, "the "#M" of the transform");\
+#define FILL_TRANSFORM(M, LUASTATE, I, TRANSFORM) \
+    lua_pushinteger(LUASTATE, ++I); \
+    lua_gettable(LUASTATE, -3); \
+    if (!lua_isnumber(LUASTATE, -1)) \
+        return luaL_error(LUASTATE, ERR_MALFORMED); \
+    TRANSFORM.M = lua_tonumber(LUASTATE, -1); \
+    CHECK_NAN(TRANSFORM.M, "the "#M" of the transform"); \
     lua_pop(LUASTATE, 1);
 
 
@@ -226,7 +226,7 @@ static int l_set_transform(lua_State *L, CALayer *self) //-1 = transform
 #else
     lua_objlen(L, -1);
 #endif
-    if(lua_tonumber(L, -1) != 16)
+    if (lua_tointeger(L, -1) != 16)
         return luaL_error(L, ERR_MALFORMED);
     lua_pop(L, 1);
 
@@ -239,7 +239,7 @@ static int l_set_transform(lua_State *L, CALayer *self) //-1 = transform
 }
 
 #define PUSH_TRANSFORM(M, LUASTATE, I, TRANSFORM)\
-    lua_pushnumber(LUASTATE, ++I);\
+    lua_pushinteger(LUASTATE, ++I);\
     lua_pushnumber(LUASTATE, TRANSFORM.M);\
     lua_settable(LUASTATE, -3)
 

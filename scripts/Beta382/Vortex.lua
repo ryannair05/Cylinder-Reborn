@@ -10,14 +10,10 @@ return function(page, offset, screen_width, screen_height)
     
     local endStage1P = 1/3
     
-    local stage1P = percent*3
-    if (stage1P > 1) then stage1P = 1 end
+    local stage1P = math.min(percent * 3, 1)
+    local stage2P = math.max(math.min((percent - endStage1P) * 3, 1), 0)
     
-    local stage2P = (percent-endStage1P)*3
-    if (stage2P > 1) then stage2P = 1
-    elseif (stage2P < 0) then stage2P = 0 end
-    
-    for i, icon in subviews(page) do
+    for i, icon in ipairs(page.subviews) do
         local iconAngle = theta*(i-1) - math.pi/6 + stage2P*(math.pi/3)
         
         local begX = icon.x+icon.width/2

@@ -6,11 +6,9 @@ return function(pg, of, sw, sh)
     local pc, cx, cy = math.abs(of/pg.width), pg.width/2, pg.height/2
     -- target distance
     local tg = pg.width
-    local fnum=1;
-    local fx=5*pc
-    local de = 3*pc
-    if de>1 then de=1 end
-    if fx>1 then fx=1 end
+    local fx = math.min(5 * pc, 1)
+    local de = math.min(3 * pc, 1)
+
     for i, ic in subviews(pg) do
         -- get icon center
         local icx, icy = (ic.x+ic.width/2), (ic.y+ic.height/2)
@@ -25,12 +23,9 @@ return function(pg, of, sw, sh)
         -- get hypotenuse extension
         local oh = pc*tg+fx*(1.5^(3*pc+1)-3.4*de^0.33)*h
         -- directions
-        local dx, dy = 1,1
-        if icx<cx then dx=-dx end
-        if icy<cy then dy=-dy end
-        if icy==cy then dy=0 end
-        if ang>=math.pi then fnum=-1 end
-        if ang<math.pi then fnum=1 end
+        local dx = (icx < cx) and -1 or 1
+        local dy = (icy < cy) and -1 or (icy == cy and 0 or 1)
+        local fnum = (ang >= math.pi) and -1 or 1
         -- calc new x & y
         local nx = oh * math.cos(ang2) * dx
         local ny = oh * math.sin(ang2) * dy
@@ -52,4 +47,3 @@ return function(pg, of, sw, sh)
         -- end
     end
 end
-

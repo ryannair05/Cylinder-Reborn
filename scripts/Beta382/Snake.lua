@@ -1,108 +1,153 @@
 return function (page, offset, screen_width, screen_height)
-    
     local percent = math.abs(offset/page.width)
-    -- local numIcons = #page.subviews
     
-    local topLeftX = nil
-    local topLeftY = nil
-    local iconWidth = nil
-    local iconHeight = nil
+    -- Calculate grid layout parameters
+    local gridParams = {
+        topLeftX = 0,
+        topLeftY = 0,
+        maxColumnWidth = 0,
+        maxRowHeight = 0,
+        columnSpacing = 0,
+        rowSpacing = 0
+    }
     
-    local xToX = nil
-    local yToY = nil
-    
-    if (page[1]) then
-        topLeftX = page[1].x
-        topLeftY = page[1].y
-        iconWidth = page[1].width
-        iconHeight = page[1].height
+    -- First pass: find maximum dimensions and spacing
+    if page[1] then
+        gridParams.topLeftX = page[1].x
+        gridParams.topLeftY = page[1].y
         
-        if (page[2]) then
-            xTox = page[2].x-page[1].x
+        -- Calculate maximum dimensions per column and row
+        local columnWidths = {}
+        local rowHeights = {}
+        
+        for i = 1, #page.subviews do
+            local icon = page[i]
+            if icon then
+                local columnIndex = ((i-1) % page.max_columns) + 1
+                local rowIndex = math.floor((i-1) / page.max_columns) + 1
+                
+                -- Track maximum width for each column
+                columnWidths[columnIndex] = columnWidths[columnIndex] or 0
+                columnWidths[columnIndex] = math.max(columnWidths[columnIndex], icon.width)
+                
+                -- Track maximum height for each row
+                rowHeights[rowIndex] = rowHeights[rowIndex] or 0
+                rowHeights[rowIndex] = math.max(rowHeights[rowIndex], icon.height)
+            end
         end
         
-        if (page[page.max_columns+1]) then
-            yToY = page[page.max_columns+1].y-page[1].y
+        -- Calculate spacing between columns
+        local totalColumnSpacing = 0
+        local spacingCount = 0
+        for i = 2, #page.subviews do
+            local curr = page[i]
+            local prev = page[i-1]
+            if curr and prev and ((i-1) % page.max_columns) ~= 0 then
+                local spacing = curr.x - (prev.x + prev.width)
+                totalColumnSpacing = totalColumnSpacing + spacing
+                spacingCount = spacingCount + 1
+            end
+        end
+        gridParams.columnSpacing = spacingCount > 0 and (totalColumnSpacing / spacingCount) or 0
+        
+        -- Calculate spacing between rows
+        local totalRowSpacing = 0
+        spacingCount = 0
+        for i = (page.max_columns + 1), #page.subviews do
+            local curr = page[i]
+            local prev = page[i - page.max_columns]
+            if curr and prev then
+                local spacing = curr.y - (prev.y + prev.height)
+                totalRowSpacing = totalRowSpacing + spacing
+                spacingCount = spacingCount + 1
+            end
+        end
+        gridParams.rowSpacing = spacingCount > 0 and (totalRowSpacing / spacingCount) or 0
+        
+        -- Calculate maximum dimensions
+        for _, width in pairs(columnWidths) do
+            gridParams.maxColumnWidth = math.max(gridParams.maxColumnWidth, width)
+        end
+        for _, height in pairs(rowHeights) do
+            gridParams.maxRowHeight = math.max(gridParams.maxRowHeight, height)
         end
     end
     
+    -- Process each icon
     local i = 0
     while true do
         i = i + 1
         local icon = page[i]
         if not icon then break end
         
-        local iconIndex = i -- 1-indexed
-        local iconRowNum = math.floor((iconIndex-1)/page.max_columns) -- 0-indexed
-        if (iconRowNum%2 == 1) then
-            iconIndex = iconRowNum*page.max_columns + (page.max_columns-((iconIndex-1)%page.max_columns)-1) + 1
+        local iconIndex = i
+        local iconRowNum = math.floor((iconIndex-1)/page.max_columns)
+        
+        -- Reverse index for odd rows
+        if iconRowNum % 2 == 1 then
+            iconIndex = iconRowNum * page.max_columns + (page.max_columns - ((iconIndex-1) % page.max_columns) - 1) + 1
         end
         
-        local iconPercent = percent
-        local iconCurRowNum = 0
+        -- Calculate animation parameters
+        local iconPercent = percent + (offset >= 0 and 
+            ((iconIndex-1)/page.max_icons) or 
+            ((page.max_icons-iconIndex)/page.max_icons))
+        
+        local iconCurRowNum = math.min(
+            math.floor((iconPercent*page.max_icons)/page.max_columns),
+            page.max_rows-1
+        )
+        
+        -- Determine direction
         local direction = 1
-        
-        if (offset >= 0) then
-            iconPercent = iconPercent + ((iconIndex-1)/page.max_icons)
-        elseif (offset < 0) then
-            iconPercent = iconPercent + ((page.max_icons-iconIndex)/page.max_icons)
+        if offset >= 0 then
+            if iconCurRowNum % 2 == 1 then direction = -1 end
+        else
+            if (page.max_rows-iconCurRowNum-1) % 2 == 0 then direction = -1 end
         end
         
-        iconCurRowNum = math.floor((iconPercent*page.max_icons)/page.max_columns)
-        if (iconCurRowNum > page.max_rows-1) then iconCurRowNum = page.max_rows-1 end
-        
-        if (offset >= 0) then
-            if (iconCurRowNum%2 == 1) then direction = -1 end
-        elseif (offset < 0) then
-            if ((page.max_rows-iconCurRowNum-1)%2 == 0) then direction = -1 end
-        end
-        
+        -- Calculate row and column percentages
         local percentForRow = 1/page.max_rows
-        
-        -- determine original location
-        local begX = icon.x
-        local begY = icon.y
-        
-        -- determine destination location
-        
-        -- X
-        -- Wanted to use modulo, but these are floats, i.e. 0.6%0.2 == 0.2 for certain values of 0.6
         local percentThroughRow = (iconPercent-(percentForRow*iconCurRowNum))*(1/(percentForRow-(percentForRow/page.max_columns)))
         
-        if (percentThroughRow > 1) then percentThroughRow = 1
-        elseif (percentThroughRow < 0) then percentThroughRow = 0 end
-        if (iconPercent > (page.max_icons-1)/page.max_icons) then 
-            percentThroughRow = 1+(iconPercent-((page.max_icons-1)/page.max_icons))*(2.5/(percentForRow-(percentForRow/page.max_columns)))
-        end
-        if (direction < 0) then percentThroughRow = 1-percentThroughRow end
-        
-        --local maxTravelDistanceX = (page[1].width+page.icon_spacing.x)*(page.max_columns-1)
-        local maxTravelDistanceX = (page.width-iconWidth-(topLeftX*2))
-        if (xToX) then
-            maxTravelDistanceX = xToX*(page.max_columns-1)
+        if percentThroughRow > 1 then 
+            percentThroughRow = 1
+        elseif percentThroughRow < 0 then 
+            percentThroughRow = 0 
         end
         
-        -- Y
+        if iconPercent > (page.max_icons-1)/page.max_icons then 
+            percentThroughRow = 1 + (iconPercent-((page.max_icons-1)/page.max_icons))*(2.5/(percentForRow-(percentForRow/page.max_columns)))
+        end
+        if direction < 0 then percentThroughRow = 1-percentThroughRow end
+        
+        -- Calculate travel distances using actual spacing and maximum dimensions
+        local maxTravelDistanceX = (gridParams.maxColumnWidth + gridParams.columnSpacing) * (page.max_columns - 1)
+        local maxTravelDistanceY = (gridParams.maxRowHeight + gridParams.rowSpacing) * (page.max_rows - 1)
+        
+        -- Calculate Y movement
         local percentThroughColumn = iconCurRowNum/(page.max_rows-1)
-        
-        -- Same deal with performing modulo with floats
         if (percentForRow-(iconPercent-(percentForRow*iconCurRowNum)) < 1/page.max_icons) then
-            percentThroughColumn = percentThroughColumn + (((iconPercent-(percentForRow*iconCurRowNum))-((1/page.max_icons)*(page.max_columns-1)))*page.max_icons)/(page.max_rows-1)
-        end
-        if (percentThroughColumn > 1) then percentThroughColumn = 1
-        elseif (percentThroughColumn < 0) then percentThroughColumn = 0 end
-        if (offset < 0) then percentThroughColumn = 1-percentThroughColumn end
-        
-        --local maxTravelDistanceY = (page[1].height+page.icon_spacing.y)*(page.max_rows-1)
-        local maxTravelDistanceY = (page.height-iconHeight-(topLeftY*2))
-        if (yToY) then
-            maxTravelDistanceY = yToY*(page.max_rows-1)
+            percentThroughColumn = percentThroughColumn + 
+                (((iconPercent-(percentForRow*iconCurRowNum))-((1/page.max_icons)*(page.max_columns-1)))*page.max_icons)/(page.max_rows-1)
         end
         
-        local endX = (percentThroughRow*maxTravelDistanceX)+topLeftX
-        local endY = (percentThroughColumn*maxTravelDistanceY)+topLeftY
+        if percentThroughColumn > 1 then 
+            percentThroughColumn = 1
+        elseif percentThroughColumn < 0 then 
+            percentThroughColumn = 0 
+        end
         
-        icon:translate(endX-begX, endY-begY, 0)
+        if offset < 0 then percentThroughColumn = 1-percentThroughColumn end
+        
+        -- Calculate final positions with centering offset for different sized icons
+        local endX = (percentThroughRow * maxTravelDistanceX) + gridParams.topLeftX + 
+                    (gridParams.maxColumnWidth - icon.width) / 2
+        local endY = (percentThroughColumn * maxTravelDistanceY) + gridParams.topLeftY + 
+                    (gridParams.maxRowHeight - icon.height) / 2
+        
+        -- Apply translation
+        icon:translate(endX - icon.x, endY - icon.y, 0)
     end
     
     page:translate(offset, 0, 0)

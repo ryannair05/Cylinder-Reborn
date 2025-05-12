@@ -6,7 +6,7 @@
 #define PAYPAL_SECTION 1
 #define BITCOIN_SECTION 2
 #define BITCOIN_ADDRESS @"177JwbKv8msAQPVk8azEKMCuNBWHJbs1XT"
-#define PAYPAL_URL @"https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=rweichler%40gmail%2ecom&lc=US&item_name=Reed%20Weichler&currency_code=USD&bn=PP%2dDonationsBF%3abtn_donateCC_LG%2egif%3aNonHosted"
+#define PAYPAL_URL @"https://www.paypal.com/paypalme/ryannair05"
 
 @interface UITableView (Private)
 - (NSArray *) indexPathsForSelectedRows;
@@ -115,8 +115,7 @@
             cell.textLabel.text = BITCOIN_ADDRESS;
         break;
         case PAYPAL_SECTION:
-            // cell.textLabel.text = LOCALIZE(@"PAYPAL", @"Tap here to go to Safari and donate to the original developer (rweichler) via Paypal");
-            cell.textLabel.text = nil;
+            cell.textLabel.text = LOCALIZE(@"PAYPAL", @"Tap here to go to Safari and donate to via PayPal");
         break;
     }
     return cell;
@@ -137,7 +136,7 @@
     }
     else if(indexPath.section == PAYPAL_SECTION)
     {
-        // [[UIApplication sharedApplication] openURL:[NSURL URLWithString:PAYPAL_URL] options:@{} completionHandler:nil];
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:PAYPAL_URL] options:@{} completionHandler:nil];
     }
     else
     {

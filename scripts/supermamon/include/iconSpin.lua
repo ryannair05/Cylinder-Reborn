@@ -10,6 +10,7 @@ Parameters
 	percent	: percentage of transition
 	tumbles : number or rotations
 
+v1.2 2024-08-02: Optimization update for Cylinder Reborn v1.1.1 by Ryan Nair
 v1.1 2014-02-16: Compatibility update for Cylinder v0.13.2.15
 v1.0 2014-02-15: First Release
 ******************************************************** ]]
@@ -19,11 +20,7 @@ return function (page, percent, tumbles, reverse)
     local i = 0
 	
 	local direction = reverse and -1 or 1
-    while true do
-        i = i + 1
-        local icon = page[i]
-        if icon == nil then break end
-		
-        icon:rotate(direction*angle)
+    for i = 1, #page do
+        page[i]:rotate(direction * angle)
     end
 end

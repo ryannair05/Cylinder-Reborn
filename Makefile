@@ -5,12 +5,12 @@ FINALPACKAGE = 1
 export PREFIX = $(THEOS)/toolchain/Xcode.xctoolchain/usr/bin/
 
 ifeq ($(THEOS_CURRENT_ARCH),arm64)
-	export TARGET = iphone:clang:13.5:11.0
+	export TARGET = iphone:clang:latest:11.0
 else
-	export TARGET = iphone:clang:13.5:12.0
+	export TARGET = iphone:clang:latest:12.0
 endif
 
-export ADDITIONAL_CFLAGS = -DTHEOS_LEAN_AND_MEAN -fobjc-arc
+export ADDITIONAL_CFLAGS = -DTHEOS_LEAN_AND_MEAN -fobjc-arc -DLUA_USE_IOS
 
 include $(THEOS)/makefiles/common.mk
 

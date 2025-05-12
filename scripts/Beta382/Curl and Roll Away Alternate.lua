@@ -18,7 +18,7 @@ return function(page, offset, screen_width, screen_height)
     if (stage2P > 1) then stage2P = 1
     elseif (stage2P < 0) then stage2P = 0 end
     
-    for i, icon in subviews(page) do
+    for i, icon in ipairs(page.subviews) do
         local iconAngle = theta*(i-1)
         if (offset > 0) then iconAngle = iconAngle + stage2P*(math.pi/2)
         elseif (offset < 0) then iconAngle = iconAngle + math.pi - stage2P*(math.pi/2) end

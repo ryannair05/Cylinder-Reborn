@@ -10,38 +10,33 @@ static int l_transform_rotate(lua_State *L);
 static int l_transform_translate(lua_State *L);
 static int l_transform_scale(lua_State *L);
 
-int l_uiview_index(lua_State *L)
-{
+int l_uiview_index(lua_State *L) {
     UIView *self = (__bridge UIView *)lua_touserdata(L, 1);
-    if(lua_isnumber(L, 2)) //if it's a number, return the subview
+    if (lua_isnumber(L, 2)) //if it's a number, return the subview
     {
-        if(![self isKindOfClass:objc_getClass("SBIconListView")]) {
+        if (![self isKindOfClass:objc_getClass("SBIconListView")]) {
             return luaL_error(L, "trying to get icon from object that is not a list");
         }
-        int index = lua_tonumber(L, 2) - 1;
-        if(index >= 0 && index < self.subviews.count)
+        int index = lua_tointeger(L, 2) - 1;
+        if (index >= 0 && index < self.subviews.count) 
         {
             UIView *view = self.subviews[index];
             if (![view isKindOfClass:objc_getClass("SBFTouchPassThroughView")]) {
                 return l_push_view(L, view);
             }
         }
-    }
-    else if(lua_isstring(L, 2))
+    } else if (lua_isstring(L, 2)) 
     {
         lua_rawgeti(L, LUA_REGISTRYINDEX, _viewIndexTable);
-        int lastStackTop = lua_gettop(L);
         lua_pushvalue(L, 2);
         lua_gettable(L, -2);
         lua_pushvalue(L, 1);
         lua_call(L, 1, LUA_MULTRET);
-        int diff = lua_gettop(L) - lastStackTop;
-        return diff;
+        return lua_gettop(L) - 3;
     }
 
     return 0;
 }
-
 
 static int l_uiview_index_subviews(lua_State *L)
 {
@@ -52,9 +47,8 @@ static int l_uiview_index_subviews(lua_State *L)
     lua_newtable(L);
 
     [self enumerateIconViewsUsingBlock:^(SBIconView *view, NSUInteger idx)  {
-        lua_pushnumber(L, idx+1);
         l_push_view(L, view);
-        lua_settable(L, -3);
+        lua_rawseti(L, -2, idx+1);
     }];
     return 1;
 }
@@ -190,22 +184,17 @@ static int l_transform_rotate(lua_State *L)
     }
 
     CATransform3D transform = self.layer.transform;
-    float pitch = 0, yaw = 0, roll = 0;
-    if(!lua_isnumber(L, 3))
-        roll = 1;
-    else
-    {
-        pitch = lua_tonumber(L, 3);
-        yaw = lua_tonumber(L, 4);
-        roll = lua_tonumber(L, 5);
-    }
+    float pitch = luaL_optnumber(L, 3, 0);
+    float yaw = luaL_optnumber(L, 4, 0);
+    float roll = luaL_optnumber(L, 5, 1);
 
     CHECK_NAN(pitch, "the pitch of the rotation");
     CHECK_NAN(yaw, "the yaw of the rotation");
     CHECK_NAN(roll, "the roll of the rotation");
 
-    if(fabs(pitch) > 0.01 || fabs(yaw) > 0.01)
-        transform.m34 = -1/PERSPECTIVE_DISTANCE;
+    if (fabs(pitch) > 0.01 || fabs(yaw) > 0.01) {
+        transform.m34 = -1 / PERSPECTIVE_DISTANCE;
+    }
 
     transform = CATransform3DRotate(transform, lua_tonumber(L, 2), pitch, yaw, roll);
 

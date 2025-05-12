@@ -1,10 +1,6 @@
-local function swing(page, percent, height, width, offset)
-    local i = 0
-    while true do
-        i = i + 1
+local function swing(page, percent, height, width,offset)
+    for i = 1, #page do
         local icon = page[i]
-        if icon == nil then break end
-
         icon:translate(percent*width, 0)
     end
     page:translate(0,0,percent*400)
