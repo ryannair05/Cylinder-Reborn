@@ -3,6 +3,7 @@
 #import "CylinderSettings.h"
 
 #import "CLAlignedTableViewCell.h"
+#import <libroot.h>
 
 static CLEffectsController *sharedController = nil;
 
@@ -104,11 +105,8 @@ static CLEffectsController *sharedController = nil;
 {
     self.effects = [NSMutableArray array];
     CylinderSettingsListController *ctrl = (CylinderSettingsListController*)self.parentController;
-    #ifdef THEOS_PACKAGE_INSTALL_PREFIX
-    [self addEffectsFromDirectory:@"/var/jb/Library/Cylinder"];
-    #else
-    [self addEffectsFromDirectory:@"/Library/Cylinder"];
-    #endif
+    // Matches scripts_directory() in the tweak: libroot resolves the jailbreak root on rootful, rootless and roothide.
+    [self addEffectsFromDirectory:JBROOT_PATH_NSSTRING(@"/Library/Cylinder")];
    
     NSArray *effects = [ctrl.settings objectForKey:PrefsEffectKey];
     self.selectedEffects = [NSMutableArray array];
@@ -168,11 +166,7 @@ static CLEffectsController *sharedController = nil;
 -(void)setCellIcon:(UITableViewCell *)cell effect:(CLEffect *)effect
 {
     if(effect.broken)
-        #ifdef THEOS_PACKAGE_INSTALL_PREFIX
-        cell.imageView.image = [UIImage imageWithContentsOfFile:@"/var/jb/Library/PreferenceBundles/CylinderSettings.bundle/error.png"];
-        #else
-        cell.imageView.image = [UIImage imageWithContentsOfFile:@"/Library/PreferenceBundles/CylinderSettings.bundle/error.png"];
-        #endif
+        cell.imageView.image = [UIImage imageNamed:@"error" inBundle:[NSBundle bundleForClass:self.class] compatibleWithTraitCollection:nil];
 }
 
 -(id)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath

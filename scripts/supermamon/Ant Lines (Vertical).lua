@@ -34,10 +34,11 @@ return function(page, offset, screen_width, screen_height)
 		direction = -direction 
 		
 		-- reset the direction if in a new row (fix for folders)
-		if (lastX > icon.x) then 
+		local x = icon.x
+		if (lastX > x) then 
 			direction = -1
 		end
-		lastX = icon.x
+		lastX = x
 		
 		icon:translate(0, direction*percent*page.height, 0)
 		

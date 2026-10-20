@@ -1,20 +1,23 @@
-return function (page, iconNum, percent, isHorizontal, isForwards)
-    local icon = page[iconNum]
-    if not icon then return end
-    
-    local angle = percent * (math.pi / 2)
-    local R = isHorizontal and page.width / 2 or page.height / 2
-    local xOffset = page.width / 2 - icon.x - icon.width / 2
-    local yOffset = page.height / 2 - icon.y - icon.height / 2
-    
-    icon.layer.x, icon.layer.y = icon.layer.x + xOffset, icon.layer.y + yOffset
-    
-    local ddirectional = -math.sin(angle) * R
-    local dz = -(1 - math.cos(angle)) * R
+local sin, cos, abs, atan = math.sin, math.cos, math.abs, math.atan
+local HALF_PI = math.pi / 2
+
+return function (page, icon, percent, isHorizontal, isForwards)
+    local angle = percent * HALF_PI
+    local width, height = page.width, page.height
+    local R = isHorizontal and width / 2 or height / 2
+    local centerX, centerY = icon:center()
+    local xOffset = width / 2 - centerX
+    local yOffset = height / 2 - centerY
+
+    local layer = icon.layer
+    layer.x, layer.y = layer.x + xOffset, layer.y + yOffset
+
+    local ddirectional = -sin(angle) * R
+    local dz = -(1 - cos(angle)) * R
     if not isForwards then
         ddirectional, angle = -ddirectional, -angle
     end
-    
+
     if isHorizontal then
         icon:translate(ddirectional, 0, dz)
         icon:rotate(-angle, 0, 1, 0)
@@ -22,9 +25,9 @@ return function (page, iconNum, percent, isHorizontal, isForwards)
         icon:translate(0, ddirectional, dz)
         icon:rotate(angle, 1, 0, 0)
     end
-    
+
     icon:translate(-xOffset, -yOffset, 0)
-    
-    local threshold = math.abs(math.atan((PERSPECTIVE_DISTANCE - dz) / ddirectional))
-    icon.alpha = math.abs(angle) > threshold and 1 - (math.abs(angle) - threshold) / (math.pi / 2 - threshold) or 1
+
+    local threshold = abs(atan((PERSPECTIVE_DISTANCE - dz) / ddirectional))
+    icon.alpha = abs(angle) > threshold and 1 - (abs(angle) - threshold) / (HALF_PI - threshold) or 1
 end

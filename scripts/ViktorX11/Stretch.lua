@@ -1,19 +1,20 @@
 return function(page, offset, screen_width, screen_height)
   page.layer.x = page.layer.x + offset
-  local percent = math.abs(offset/page.width)
+  local width = page.width
+  local percent = math.abs(offset/width)
+  local stretch = 1 + percent*percent
 
   for i, icon in subviews(page) do
-    local icon_centerx = icon.x + icon.width/2
-	local percent_pright = (icon_centerx) / page.width
-    local percent_pleft = (page.width-icon_centerx) / page.width
+    local icon_centerx = icon:center()
 
 	if offset < 0 then -- right page
+      local percent_pright = (icon_centerx) / width
       icon:translate(icon_centerx*percent*percent_pright*4, 0, 0)
-      icon:scale(1+(percent*percent*percent_pright/percent_pright), 1)
     else -- left page
-      icon:translate(-((page.width-icon_centerx)*percent*percent_pleft)*4, 0, 0)
-      icon:scale(1+(percent*percent*percent_pleft/percent_pleft), 1)
+      local percent_pleft = (width-icon_centerx) / width
+      icon:translate(-((width-icon_centerx)*percent*percent_pleft)*4, 0, 0)
     end
+    icon:scale(stretch, 1)
   end
   page.layer.x = page.layer.x - (offset * percent *3)
 end

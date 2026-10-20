@@ -1,7 +1,9 @@
 -- Psychospiral animation by Cylgom
+local abs, sin, cos, pi = math.abs, math.sin, math.cos, math.pi
+
 return function(page, offset, screen_width, screen_height)
-	local percent = math.abs(offset/page.width)
-	side = -1
+	local percent = abs(offset/page.width)
+	local side = -1
 	if(offset>0) then side=1 end
 
 	local rollup = percent*5
@@ -12,18 +14,18 @@ return function(page, offset, screen_width, screen_height)
 
 	local middleX =page.width/2
 	local middleY =page.height/2+7
-	local radiusparts = (middleY)/#page.subviews
-	local theta = (3.5*math.pi)/#page.subviews
+	local count = #page
+	local radiusparts = (middleY)/count
+	local theta = (3.5*pi)/count
 
 	for i, icon in subviews(page) do
 	  local initangle =(i-1)*theta
 	  local initradius =(i-1)*radiusparts
-	  local angle = initangle+runaway*(3.5*math.pi-initangle)
+	  local angle = initangle+runaway*(3.5*pi-initangle)
 	  local radius = initradius+runaway*(middleY-initradius)+45
-	  local iconX = icon.x+icon.width/2
-	  local iconY = icon.y+icon.height/2
-	  local pathX = (middleX+(radius*math.cos(angle))*side)
-	  local pathY = (middleY+(radius*math.sin(angle))*side)
+	  local iconX, iconY = icon:center()
+	  local pathX = (middleX+(radius*cos(angle))*side)
+	  local pathY = (middleY+(radius*sin(angle))*side)
 	  local iconAngle = angle
 	  icon:translate(rollup*(pathX-iconX), rollup*(pathY-iconY), 0)
 	  icon:rotate(rollup*iconAngle)

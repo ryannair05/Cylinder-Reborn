@@ -3,7 +3,7 @@
 #import "../lua/lualib.h"
 // #import "macros.h"
 #import "lua_UIView.h"
-
+#import <libroot.h>
 
 #define LOG_DIR @"/var/mobile/Library/Logs/Cylinder/"
 #define LOG_PATH "errors.log"
@@ -11,7 +11,9 @@
 
 static lua_State *L = NULL;
 
-static NSMutableArray *_scripts = nil;
+/// Registry references to each loaded script's function, read on every frame.
+static int *_scripts = NULL;
+static NSUInteger _scriptCount = 0;
 static NSMutableArray *_scriptNames = nil;
 BOOL _randomize;
 
@@ -23,26 +25,23 @@ static int l_popup(lua_State *L);
 static void write_error(const char *error);
 static void write_file(const char *msg, const char *filename);
 
-// static const char *OS_DANGER[] = {
-//     "exit",
-//     "setlocale",
-//     //"date",
-//     //"getenv",
-//     //"difftime",
-//     "remove",
-//     //"time",
-//     //"clock",
-//     "tmpname",
-//     "rename",
-//     "execute",
-//     NULL
-// };
+/// Scripts run inside SpringBoard, so they get no io or package library (which can load native code)
+/// and none of these os functions.
+static const char *OS_DANGER[] = {
+    "exit",
+    "setlocale",
+    "remove",
+    "tmpname",
+    "rename",
+    "execute",
+    NULL
+};
 
-static void remove_script(int index)
+static void remove_script(NSUInteger index)
 {
-    int func = [[_scripts objectAtIndex:index] intValue];
-    luaL_unref(L, LUA_REGISTRYINDEX, func);
-    [_scripts removeObjectAtIndex:index];
+    luaL_unref(L, LUA_REGISTRYINDEX, _scripts[index]);
+    memmove(&_scripts[index], &_scripts[index + 1], (_scriptCount - index - 1) * sizeof(int));
+    _scriptCount--;
     [_scriptNames removeObjectAtIndex:index];
 }
 
@@ -70,21 +69,36 @@ static void error_notification(NSArray *errors)
     }
 }
 
-void close_lua()
+void close_lua(void)
 {
     if(L != NULL) lua_close(L);
     L = NULL;
-    _scripts = nil;
+    free(_scripts);
+    _scripts = NULL;
+    _scriptCount = 0;
     _scriptNames = nil;
 }
 
-static void create_state()
+static void create_state(void)
 {
     //create state
     L = luaL_newstate();
 
     //load libraries
-    luaL_openlibs(L);
+    luaL_openselectedlibs(L, ~(LUA_IOLIBK | LUA_LOADLIBK), 0);
+
+    lua_getglobal(L, LUA_OSLIBNAME);
+    for(const char **name = OS_DANGER; *name; name++)
+    {
+        lua_pushnil(L);
+        lua_setfield(L, -2, *name);
+    }
+    lua_pop(L, 1);
+
+    // Scripts allocate short-lived tables and handles on every frame and keep little else, which is
+    // the pattern generational collection is built for. Lua 5.5 also runs its major collections
+    // incrementally, so a full collection cannot stall one frame.
+    lua_gc(L, LUA_GCGEN);
 
     // LuaJIT and 64-bit OS X don't play well together http://luajit.org/install.html#embed
     // since we're embedding in SpringBoard we don't have the luxury of using linker flags
@@ -96,7 +110,6 @@ static void create_state()
     lua_setglobal(L, "print");
 
     //set globals
-    lua_newtable(L);
     l_push_base_transform(L);
     lua_setglobal(L, "BASE_TRANSFORM");
 
@@ -109,7 +122,8 @@ static void create_state()
     //set UIView metatable
     l_create_uiview_metatable(L);
 
-    lua_pushnumber(L, PERSPECTIVE_DISTANCE);
+    CylinderUpdateScreenMetrics();
+    lua_pushnumber(L, CylinderPerspectiveDistance);
     lua_setglobal(L, "PERSPECTIVE_DISTANCE");
 
 }
@@ -152,14 +166,25 @@ static void set_environment(const char *script)
     lua_setupvalue(L, -2, 1);
 }
 
+/// Writes the path of a file under /Library/Cylinder, given as a format and its arguments, into `out`, which
+/// holds PATH_MAX bytes. libroot resolves the jailbreak root on rootful, rootless and roothide.
+static const char *script_path(char *out, const char *format, ...)
+{
+    char relative[PATH_MAX];
+    int length = snprintf(relative, sizeof(relative), "/Library/Cylinder/");
+    va_list args;
+    va_start(args, format);
+    vsnprintf(relative + length, sizeof(relative) - length, format, args);
+    va_end(args);
+
+    return libroot_dyn_jbrootpath(relative, out);
+}
+
 static int open_script(const char *script)
 {
-    char path[strlen(script) + 22];
-    #ifdef THEOS_PACKAGE_INSTALL_PREFIX
-    sprintf(path, "/var/jb/Library/Cylinder/%s.lua", script);
-    #else
-    sprintf(path, "/Library/Cylinder/%s.lua", script);
-    #endif
+    char buffer[PATH_MAX];
+    const char *path = script_path(buffer, "%s.lua", script);
+
 
     //load our file and save the function we want to call
     BOOL loaded = luaL_loadfile(L, path) == 0;
@@ -168,10 +193,13 @@ static int open_script(const char *script)
         set_environment(script);
         loaded = lua_pcall(L, 0, 1, 0) == 0;
 
-        if(lua_isfunction(L, -1))
+        if(loaded && lua_isfunction(L, -1))
         {
-            lua_pushvalue(L, -1);
             return luaL_ref(L, LUA_REGISTRYINDEX);
+        }
+        else if(!loaded)
+        {
+            write_error([NSString stringWithFormat:@"error opening %s: %s", script, lua_tostring(L, -1)].UTF8String);
         }
         else
         {
@@ -196,7 +224,7 @@ BOOL init_lua(NSArray *scripts, BOOL random)
     close_lua();
     create_state();
 
-    _scripts = [NSMutableArray arrayWithCapacity:scripts.count];
+    _scripts = calloc(scripts.count, sizeof(int));
     _scriptNames = [NSMutableArray arrayWithCapacity:scripts.count];
 
     NSMutableArray *errors = [NSMutableArray arrayWithCapacity:scripts.count];
@@ -212,14 +240,14 @@ BOOL init_lua(NSArray *scripts, BOOL random)
 
         if(func != -1)
         {
-            [_scripts addObject:[NSNumber numberWithInt:func]];
+            _scripts[_scriptCount++] = func;
             [_scriptNames addObject:script];
         }
     }
 
     error_notification(errors);
 
-    if(_scripts.count == 0 || L == NULL)
+    if(_scriptCount == 0 || L == NULL)
     {
         close_lua();
         return false;
@@ -232,12 +260,9 @@ static int l_loadfile_override(lua_State *L)
     const char *file = lua_tostring(L, 1);
     const char *subfolder = lua_tostring(L, lua_upvalueindex(2));
 
+    char buffer[PATH_MAX];
     if(file != NULL)
-        #ifdef THEOS_PACKAGE_INSTALL_PREFIX
-        file = [NSString stringWithFormat:@"/var/jb/Library/Cylinder/%s/%s", subfolder, file].UTF8String;
-        #else
-        file = [NSString stringWithFormat:@"/Library/Cylinder/%s/%s", subfolder, file].UTF8String;
-        #endif
+        file = script_path(buffer, "%s/%s", subfolder, file);
 
     int top = lua_gettop(L);
     lua_pushvalue(L, lua_upvalueindex(1));
@@ -302,19 +327,44 @@ inline int l_popup(lua_State *L)
 //this is literally the same code as ipairs
 static int l_subviewsaux(lua_State *L)
 {
-    // CHECK_UIVIEW(L, 1);
-    const int i = luaL_checkinteger(L, 2) + 1;
+    const lua_Integer i = luaL_checkinteger(L, 2) + 1;
     lua_pushinteger(L, i);
     lua_pushvalue(L, -1);
     lua_gettable(L, 1);
     return (lua_isnil(L, -1)) ? 1 : 2;
 }
 
+/// Steps through a page's icons directly instead of indexing the page through its metamethod.
+static int l_page_subviewsaux(lua_State *L)
+{
+    CylinderHandle *handle = (CylinderHandle *)lua_touserdata(L, 1);
+    const lua_Integer i = luaL_checkinteger(L, 2);
+    if(!handle) return 0;
+
+    NSUInteger count;
+    CylinderEntry **icons = [handle->entry->context iconEntriesWithCount:&count];
+    if(i < 0 || (NSUInteger)i >= count)
+    {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_pushinteger(L, i + 1);
+    l_push_handle(L, &icons[i]->viewHandle);
+    return 2;
+}
+
+static BOOL l_is_page_handle(lua_State *L, int index)
+{
+    if(lua_type(L, index) != LUA_TLIGHTUSERDATA) return NO;
+    CylinderHandle *handle = (CylinderHandle *)lua_touserdata(L, index);
+    if(!handle) return NO;
+    CylinderEntry *entry = handle->entry;
+    return handle->kind == CylinderHandleKindView && entry == &entry->context->_page;
+}
 
 static int l_subviews(lua_State *L)
 {
-    // CHECK_UIVIEW(L, 1);
-    lua_pushcfunction(L, l_subviewsaux);
+    lua_pushcfunction(L, l_is_page_handle(L, 1) ? l_page_subviewsaux : l_subviewsaux);
     lua_pushvalue(L, 1);
     lua_pushinteger(L, 0);
     return 3;
@@ -341,8 +391,12 @@ static void write_file(const char *msg, const char *filename)
     NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:path];
     [fileHandle seekToEndOfFile];
 
-    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
-    [dateFormatter setDateFormat:@"[yyyy-MM-dd HH:mm:ss] "];
+    static NSDateFormatter *dateFormatter;
+    if(!dateFormatter)
+    {
+        dateFormatter = [[NSDateFormatter alloc] init];
+        [dateFormatter setDateFormat:@"[yyyy-MM-dd HH:mm:ss] "];
+    }
     NSString *dateStr = [dateFormatter stringFromDate:NSDate.date];
 
     [fileHandle writeData:[dateStr dataUsingEncoding:NSUTF8StringEncoding]];
@@ -351,51 +405,39 @@ static void write_file(const char *msg, const char *filename)
     [fileHandle closeFile];
 }
 
-static BOOL manipulate_step(__unsafe_unretained UIView *view, float offset, int funcIndex)
+/// Runs one script on the page. A failing script is removed and reported so later frames skip it.
+static BOOL manipulate_step(CylinderPageContext *context, CGFloat offset, NSUInteger funcIndex)
 {
-    const int func = [[_scripts objectAtIndex:funcIndex] intValue];
-    lua_rawgeti(L, LUA_REGISTRYINDEX, func);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, _scripts[funcIndex]);
 
-    l_push_view(L, view);
+    l_push_handle(L, &context->_page.viewHandle);
     lua_pushnumber(L, offset);
-    lua_pushnumber(L, SCREEN_SIZE.width);
-    lua_pushnumber(L, SCREEN_SIZE.height);
+    lua_pushnumber(L, CylinderScreenSize.width);
+    lua_pushnumber(L, CylinderScreenSize.height);
 
-    const BOOL success = lua_pcall(L, 4, 1, 0) == 0;
+    if (lua_pcall(L, 4, 0, 0) == LUA_OK) return YES;
 
-    if(!success)
-    {
-        write_error(lua_tostring(L, -1));
-        NSDictionary *error = gen_error_dict([_scriptNames objectAtIndex:funcIndex], true);
-        NSArray *errors = [NSArray arrayWithObject:error];
-        error_notification(errors);
-        remove_script(funcIndex);
-        if (_randomize) {
-            funcIndex = arc4random_uniform(_scripts.count);
-        }
-        else if (funcIndex == _scripts.count) {
-            lua_pop(L, 1);
-            return false;
-        }
-        manipulate_step(view, offset, funcIndex);
-    }
+    write_error(lua_tostring(L, -1));
     lua_pop(L, 1);
-    return success;
+    NSDictionary *error = gen_error_dict([_scriptNames objectAtIndex:funcIndex], true);
+    error_notification([NSArray arrayWithObject:error]);
+    remove_script(funcIndex);
+    return NO;
 }
 
-inline BOOL manipulate(__unsafe_unretained UIView *view, float offset, u_int32_t rand)
+BOOL manipulate(CylinderPageContext *context, CGFloat offset, u_int32_t rand)
 {
     if(_randomize)
     {
-        return manipulate_step(view, offset, rand % _scripts.count);
-                                                                  //_scripts.count has decremented by 1
+        while(_scriptCount > 0 && !manipulate_step(context, offset, rand % _scriptCount));
     }
     else
     {
-        for(int i = 0; i < _scripts.count; i++)
+        for(NSUInteger i = 0; i < _scriptCount;)
         {
-            manipulate_step(view, offset, i);
+            // A failed script is removed, which shifts the next script into index i.
+            if(manipulate_step(context, offset, i)) i++;
         }
-        return _scripts.count > 0;
     }
+    return _scriptCount > 0;
 }

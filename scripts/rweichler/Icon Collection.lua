@@ -1,8 +1,5 @@
---CRAAAZY trig stuff!!!
-
-local function distance(x1, y1, x2, y2)
-    return math.sqrt((x1 - x2)^2 + (y1 - y2)^2)
-end
+-- Every icon slides straight toward the page center. This used to be done with CRAAAZY trig
+-- stuff, which works out to the same thing but divides by zero for an icon at the very center.
 
 return function(page, offset, screen_width, screen_height)
     local percent = math.abs(offset/page.width)
@@ -11,16 +8,7 @@ return function(page, offset, screen_width, screen_height)
     local center_y = page.height/2
 
     for i, icon in subviews(page) do
-        local x = icon.x + icon.width/2
-        local y = icon.y + icon.height/2
-
-        local hypotenuse = percent*distance(x, y, center_x, center_y)
-        local angle = math.atan((center_x - x)/(center_y - y))
-        if y > center_y then hypotenuse = -hypotenuse end
-
-        local dx = hypotenuse*math.sin(angle)
-        local dy = hypotenuse*math.cos(angle)
-
-        icon:translate(dx, dy, 0)
+        local x, y = icon:center()
+        icon:translate(percent*(center_x - x), percent*(center_y - y), 0)
     end
 end

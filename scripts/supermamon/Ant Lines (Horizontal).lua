@@ -29,9 +29,10 @@ return function(page, offset, screen_width, screen_height)
 
     for i, icon in subviews(page) do
 		-- if this icon is on the next row
-		if (lastY < icon.y) then 
+		local y = icon.y
+		if (lastY < y) then 
 			direction=-direction
-			lastY = icon.y
+			lastY = y
 		end
 		icon:translate(direction*offset, 0, 0)
     end	

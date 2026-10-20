@@ -22,7 +22,8 @@ return function(page, offset, screen_width, screen_height)
     local percent = offset/page.width
 
     for i, icon in subviews(page) do
-        local distance_from_middle = math.abs(page.width/2 - (icon.x + icon.width/2))
+        local center_x = icon:center()
+        local distance_from_middle = math.abs(page.width/2 - center_x)
         if distance_from_middle > page.width/4 then --> only do the icons on the sides
             fade(icon, percent) --> calls the convenience function we made earlier
         end
@@ -78,6 +79,9 @@ view.y
 view.width
 view.height
 
+view:center() --> view.x + view.width/2, view.y + view.height/2 in one call:
+              --  local x, y = icon:center()
+
 -- view layer properties
 -- this is usually for when you want to do
 -- a translation, then a rotation
@@ -102,10 +106,17 @@ view.layer.x = view.layer.x + offset
 
 PERSPECTIVE_DISTANCE --distance from viewpoint to icons
 
---these should be self-explanitory
+--these should be self-explanitory. they are whole numbers (Lua integers)
 page.max_icons
 page.max_columns
 page.max_rows
+
+-- page[i] and subviews(page) list icons in the order the grid shows them:
+-- left to right, then top to bottom. A widget is one icon that spans several cells.
+
+-- zero-based grid cell of an icon's top-left corner (READONLY)
+icon.row
+icon.column
 
 --builtin lua functions
 
@@ -123,11 +134,19 @@ os.time() ---> number of seconds since January 1st, 1970
 
 -- ....yeah those are some basics,
 -- there are a ton more. just google
--- "lua 5.2 standard library" or something
+-- "lua 5.5 standard library" or something
+
+-- Cylinder runs Lua 5.5, where a for loop's variable is read only.
+-- copy it first if you need to change it:
+--     for i = 1, #page do local index = i ... end
+-- scripts run every frame, so copy math functions you call in the
+-- loop into locals at the top of the file:
+--     local sin, cos = math.sin, math.cos
 -- and you can see all the functions you can use.
--- i disabled a few dangerous ones like os.exit and
--- os.execute for obvious reasons but most of them are
--- there.
+-- i disabled a few dangerous ones for obvious reasons:
+-- os.exit, os.execute, os.remove, os.rename, os.tmpname,
+-- os.setlocale, and the io and package libraries (so no
+-- require; use dofile). most of the rest are there.
 
 -- *************************
 -- **** ADVANCED USERS *****

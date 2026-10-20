@@ -1,9 +1,9 @@
 #import <QuartzCore/QuartzCore.h>
-#import "../lua/lua.h"
 #import <UIKit/UIKit.h>
-#import "CALayer+Cylinder.h"
+#import "../lua/lua.h"
+#import "CylinderPageContext.h"
 
-void close_lua();
+void close_lua(void);
 BOOL init_lua(NSArray *scripts, BOOL random);
-BOOL manipulate(UIView *view, float offset, u_int32_t rand);
-//const char * get_stack(lua_State *L, const char *strr);
+/// Runs the selected scripts against the page. Returns NO once every script has failed.
+BOOL manipulate(CylinderPageContext *context, CGFloat offset, u_int32_t rand);

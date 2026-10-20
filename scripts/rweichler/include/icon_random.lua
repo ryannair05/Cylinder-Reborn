@@ -40,6 +40,9 @@ local function make_progress_table(mag, max)
     return tbl
 end
 
+-- The table only depends on its arguments, which stay the same from frame to frame.
+local progress_table, progress_mag, progress_max
+
 return function(page, percent, mag, callback)
     init(#page)
     local max = #view_order
@@ -53,19 +56,22 @@ return function(page, percent, mag, callback)
         percent = -percent
     end
 
-    local progress_table = make_progress_table(mag, max)
+    if mag ~= progress_mag or max ~= progress_max then
+        progress_table, progress_mag, progress_max = make_progress_table(mag, max), mag, max
+    end
+
+    local half_mag = mag/2
+    local count = #progress_table
     for i, prog in ipairs(progress_table) do
-        if negative then
-            i = #progress_table - i + 1
-        end
-        local icon = page[view_order[i]]
+        local index = negative and count - i + 1 or i
+        local icon = page[view_order[index]]
         if not icon then
-        elseif percent < prog - mag/2 then
+        elseif percent < prog - half_mag then
             callback(icon, 0)
-        elseif percent > prog + mag/2 then
+        elseif percent > prog + half_mag then
             callback(icon, negative and -1 or 1)
         else
-            local p = (percent - prog + mag/2)/mag
+            local p = (percent - prog + half_mag)/mag
             if negative then
                 p = -p
             end

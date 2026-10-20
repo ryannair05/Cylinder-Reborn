@@ -18,7 +18,8 @@
     if (self) {
         self.settings = [[NSUserDefaults alloc] initWithSuiteName:@"com.ryannair05.cylinder"];
         [self.settings registerDefaults:@{ PrefsEffectKey: DEFAULT_EFFECTS }];
-        _defaultFooterText = [[NSDictionary dictionaryWithContentsOfFile:@"/Library/PreferenceBundles/CylinderSettings.bundle/en.lproj/CylinderSettings.strings"] objectForKey:@"FOOTER_TEXT"];
+        NSString *footerPath = [[NSBundle bundleForClass:self.class] pathForResource:@"CylinderSettings" ofType:@"strings" inDirectory:nil forLocalization:@"en"];
+        _defaultFooterText = [[NSDictionary dictionaryWithContentsOfFile:footerPath] objectForKey:@"FOOTER_TEXT"];
     }
     return self;
 }

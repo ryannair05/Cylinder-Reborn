@@ -3,9 +3,12 @@ return function(page, offset, screen_width, screen_height)
 
     if percent < 0 then percent = -percent end
 
+    local middle = page.height/2
+
     for i, icon in subviews(page) do
         local mult = 1
-        if icon.y + icon.height/2 < page.height/2 then mult = -1 end
+        local _, y = icon:center()
+        if y < middle then mult = -1 end
         icon:translate(0, mult*percent*screen_height/2, 0)
     end
 

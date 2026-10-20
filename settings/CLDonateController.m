@@ -45,11 +45,8 @@
         [[AVAudioSession sharedInstance] setActive:true error:&sessionError];
 
         NSError *error;
-        #ifdef THEOS_PACKAGE_INSTALL_PREFIX
-        _player = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL URLWithString:@"/var/jb/Library/PreferenceBundles/CylinderSettings.bundle/" "iloveyou.mp3"] error:&error];
-        #else
-        _player = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL URLWithString:@"/Library/PreferenceBundles/CylinderSettings.bundle/" "iloveyou.mp3"] error:&error];
-        #endif
+        NSURL *audioURL = [[NSBundle bundleForClass:self.class] URLForResource:@"iloveyou" withExtension:@"mp3"];
+        _player = [[AVAudioPlayer alloc] initWithContentsOfURL:audioURL error:&error];
         if(!error)
         {
             [_player prepareToPlay];
