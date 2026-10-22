@@ -1,4 +1,4 @@
-THEOS_DEVICE_IP = 192.168.1.245
+THEOS_DEVICE_IP = 10.169.121.44
 
 FINALPACKAGE = 1
 
@@ -27,12 +27,20 @@ ifneq ($(ROOTFUL),1)
 export ADDITIONAL_CFLAGS += -fno-ptrauth-objc-class-ro
 endif
 
+ifneq ($(CYLINDER_SIMJECT),)
+export ADDITIONAL_CFLAGS += -DCYLINDER_SIMJECT=1
+endif
+
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Cylinder
-Cylinder_FILES = tweak/tweak.x $(wildcard tweak/*.m) lua/onelua.c
+Cylinder_FILES = tweak/tweak.x $(filter-out tweak/CylinderSimHarness.m,$(wildcard tweak/*.m)) lua/onelua.c
 # MAKE_LIB leaves out the standalone interpreter's main().
 lua/onelua.c_CFLAGS = -DMAKE_LIB -O2
+
+ifneq ($(CYLINDER_SIMJECT),)
+Cylinder_FILES += tweak/CylinderSimHarness.m
+endif
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
@@ -43,5 +51,9 @@ include $(THEOS_MAKE_PATH)/aggregate.mk
 
 internal-stage::
 	$(ECHO_NOTHING)mkdir -p $(THEOS_STAGING_DIR)/Library/Cylinder/$(ECHO_END)
-	$(ECHO_NOTHING)rsync -a --exclude .DS_Store scripts/ $(THEOS_STAGING_DIR)/Library/Cylinder/$(ECHO_END)
+	$(ECHO_NOTHING)rsync -a --exclude .DS_Store --exclude run-simject.sh scripts/ $(THEOS_STAGING_DIR)/Library/Cylinder/$(ECHO_END)
+
+.PHONY: simject
+simject:
+	./scripts/run-simject.sh
 

@@ -1,0 +1,10 @@
+interface:
+  display_name: "Hopper Implementation Evidence"
+  short_description: "Queries targeted Hopper MCP evidence."
+  default_prompt: "Use $hopper-implementation-evidence for the specific binary/framework symbols needed for this behavior."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "HopperMCPServer"
+      description: "Hopper 6 STDIO MCP server for querying open/analyzed Hopper documents."

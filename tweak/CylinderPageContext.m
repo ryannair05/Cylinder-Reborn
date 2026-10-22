@@ -1,7 +1,13 @@
 #import "CylinderPageContext.h"
 
 #import "tweak.h"
+#import "CylinderDebug.h"
 
+#ifdef CYLINDER_SIMJECT
+extern BOOL CylinderHarnessAuditIcons;
+extern BOOL CylinderHarnessKeepOffRangePages;
+void CylinderHarnessLogLine(NSString *line);
+#endif
 
 
 CGSize CylinderScreenSize;
@@ -9,7 +15,9 @@ CGFloat CylinderPerspectiveDistance = 1;
 
 void CylinderUpdateScreenMetrics(void)
 {
+    CGSize previous = CylinderScreenSize;
     CylinderScreenSize = UIScreen.mainScreen.bounds.size;
+    if (!CGSizeEqualToSize(previous, CylinderScreenSize)) CylinderDebugLog(@"[metrics] screen %@", NSStringFromCGSize(CylinderScreenSize));
     CGFloat distance = (CylinderScreenSize.width + CylinderScreenSize.height) / 2;
     CylinderPerspectiveDistance = distance > 0 ? distance : 1;
 }
@@ -23,10 +31,110 @@ static const NSUInteger CylinderInitialEntryCapacity = 48;
 /// the current frame staged it. Dirty properties the frame leaves alone return to their saved values.
 static const CylinderDirtyFlags CylinderDirtyGeometry = CylinderDirtyTransform | CylinderDirtyPosition;
 
+/// Core Animation stores opacity as a float, so a value read back can differ slightly from the one written.
+static inline BOOL CylinderNearlyEqual(CGFloat a, CGFloat b)
+{
+    return fabs(a - b) <= 1e-4 * MAX(1.0, MAX(fabs(a), fabs(b)));
+}
+
+static BOOL CylinderTransformsNearlyEqual(CATransform3D a, CATransform3D b)
+{
+    const CGFloat *x = &a.m11, *y = &b.m11;
+    for (int i = 0; i < 16; i++) {
+        if (!CylinderNearlyEqual(x[i], y[i])) return NO;
+    }
+    return YES;
+}
+
+/// SpringBoard can change a property after Cylinder wrote it, as it does when it resets an icon view it
+/// recycles onto another page. Its value then wins: restoring the saved original over it would leave the
+/// icon shrunk or faded wherever SpringBoard puts it next, and the next frame that stages the property
+/// saves SpringBoard's value as the new original.
+static void CylinderEntryReleaseChangedProperties(CylinderEntry *entry)
+{
+    CylinderDirtyFlags changed = 0;
+    if ((entry->dirty & CylinderDirtyTransform) && !CylinderTransformsNearlyEqual(entry->layer.transform, entry->writtenTransform)) {
+        changed |= CylinderDirtyTransform;
+    }
+    if (entry->dirty & CylinderDirtyPosition) {
+        CGPoint position = entry->layer.position;
+        if (!CylinderNearlyEqual(position.x, entry->writtenPosition.x) || !CylinderNearlyEqual(position.y, entry->writtenPosition.y)) {
+            changed |= CylinderDirtyPosition;
+        }
+    }
+    if ((entry->dirty & CylinderDirtyAlpha) && !CylinderNearlyEqual(entry->view.alpha, entry->writtenAlpha)) {
+        changed |= CylinderDirtyAlpha;
+    }
+    if (!changed) return;
+    entry->dirty &= ~changed;
+    entry->hasCachedFrame = NO;
+}
+
+enum {
+    CylinderDebugLoggedTransform = 1 << 0,
+    CylinderDebugLoggedAlpha = 1 << 1,
+    CylinderDebugLoggedAnimation = 1 << 2,
+    CylinderDebugLoggedForeignTransform = 1 << 3,
+    CylinderDebugLoggedForeignAlpha = 1 << 4,
+    CylinderDebugLoggedForeignPosition = 1 << 5,
+};
+
+static NSString *CylinderDebugEntryName(CylinderEntry *entry)
+{
+    BOOL page = entry == &entry->context->_page;
+    return [NSString stringWithFormat:@"%@%@ superview=%@", page ? @"page " : @"", CylinderDebugDescribeView(entry->view),
+            NSStringFromClass(entry->view.superview.class)];
+}
+
+static BOOL CylinderDebugOnce(CylinderEntry *entry, uint8_t flag)
+{
+    if (entry->debugLogged & flag) return NO;
+    entry->debugLogged |= flag;
+    return YES;
+}
+
+/// Running animations on a layer while Cylinder records its values mean SpringBoard is moving it.
+static void CylinderDebugCheckAnimations(CylinderEntry *entry, NSString *property)
+{
+    NSArray<NSString *> *keys = entry->layer.animationKeys;
+    if (keys.count && CylinderDebugOnce(entry, CylinderDebugLoggedAnimation)) {
+        CylinderDebugLog(@"[capture] %@ recorded while layer animates (%@): %@", property, [keys componentsJoinedByString:@","], CylinderDebugEntryName(entry));
+    }
+}
+
+/// SpringBoard changed a property Cylinder wrote, so its value is kept rather than the one saved before Cylinder's write.
+static void CylinderDebugCheckForeignWrites(CylinderEntry *entry, CylinderDirtyFlags flags)
+{
+    if (!entry->layer) return;
+    if ((flags & CylinderDirtyTransform) && !CylinderTransformsNearlyEqual(entry->layer.transform, entry->writtenTransform) &&
+        CylinderDebugOnce(entry, CylinderDebugLoggedForeignTransform)) {
+        CylinderDebugLog(@"[release] transform changed by someone else, kept: now {%@} cylinder wrote {%@} saved {%@} on %@",
+                         CylinderDebugDescribeTransform(entry->layer.transform), CylinderDebugDescribeTransform(entry->writtenTransform),
+                         CylinderDebugDescribeTransform(entry->savedTransform), CylinderDebugEntryName(entry));
+    }
+    if ((flags & CylinderDirtyAlpha) && !CylinderNearlyEqual(entry->view.alpha, entry->writtenAlpha) &&
+        CylinderDebugOnce(entry, CylinderDebugLoggedForeignAlpha)) {
+        CylinderDebugLog(@"[release] alpha changed by someone else, kept: now %.3f cylinder wrote %.3f saved %.3f on %@",
+                         entry->view.alpha, entry->writtenAlpha, entry->savedAlpha, CylinderDebugEntryName(entry));
+    }
+    if ((flags & CylinderDirtyPosition) && (!CylinderNearlyEqual(entry->layer.position.x, entry->writtenPosition.x) ||
+                                            !CylinderNearlyEqual(entry->layer.position.y, entry->writtenPosition.y)) &&
+        CylinderDebugOnce(entry, CylinderDebugLoggedForeignPosition)) {
+        CylinderDebugLog(@"[release] position changed by someone else, kept: now %@ cylinder wrote %@ saved %@ on %@",
+                         NSStringFromCGPoint(entry->layer.position), NSStringFromCGPoint(entry->writtenPosition),
+                         NSStringFromCGPoint(entry->savedPosition), CylinderDebugEntryName(entry));
+    }
+}
+
 static void CylinderEntryRestore(CylinderEntry *entry, CylinderDirtyFlags flags)
 {
     flags &= entry->dirty;
     entry->touched &= ~flags;
+    if (!flags) return;
+    CylinderDebugCheckForeignWrites(entry, flags);
+
+    CylinderEntryReleaseChangedProperties(entry);
+    flags &= entry->dirty;
     if (!flags) return;
 
     if (flags & CylinderDirtyTransform) entry->layer.transform = entry->savedTransform;
@@ -36,6 +144,23 @@ static void CylinderEntryRestore(CylinderEntry *entry, CylinderDirtyFlags flags)
     entry->hasCachedFrame = NO;
 }
 
+/// A transform that only scales and translates in the plane, whose frame is its bounds scaled by m11 and m22.
+static inline BOOL CylinderTransformIsPlanarScale(CATransform3D t)
+{
+    return t.m12 == 0 && t.m13 == 0 && t.m14 == 0 && t.m21 == 0 && t.m23 == 0 && t.m24 == 0 &&
+           t.m31 == 0 && t.m32 == 0 && t.m34 == 0 && t.m44 == 1;
+}
+
+@interface CylinderPageContext ()
+- (void)antialiasEntry:(CylinderEntry *)entry;
+- (void)keepStackingOfIconContainers;
+@end
+
+@interface CALayer (CylinderPrivate)
+/// Private, YES by default: sublayers draw in zPosition order rather than in the order of `sublayers`.
+@property (nonatomic) BOOL sortsSublayers;
+@end
+
 /// Writes the staged values of `flags` that differ from what the layer shows.
 static void CylinderEntryCommit(CylinderEntry *entry, CylinderDirtyFlags flags)
 {
@@ -43,7 +168,10 @@ static void CylinderEntryCommit(CylinderEntry *entry, CylinderDirtyFlags flags)
 
     if (flags & CylinderDirtyTransform) {
         CATransform3D current = (entry->dirty & CylinderDirtyTransform) ? entry->writtenTransform : entry->savedTransform;
-        if (!CATransform3DEqualToTransform(entry->transform, current)) entry->layer.transform = entry->transform;
+        if (!CATransform3DEqualToTransform(entry->transform, current)) {
+            entry->layer.transform = entry->transform;
+            if (!entry->antialiased && !CylinderTransformIsPlanarScale(entry->transform)) [entry->context antialiasEntry:entry];
+        }
         entry->writtenTransform = entry->transform;
         if (CATransform3DEqualToTransform(entry->transform, entry->savedTransform)) entry->dirty &= ~CylinderDirtyTransform;
         else entry->dirty |= CylinderDirtyTransform;
@@ -74,7 +202,14 @@ CATransform3D CylinderEntryTransform(CylinderEntry *entry)
 void CylinderEntrySetTransform(CylinderEntry *entry, CATransform3D transform)
 {
     if (!(entry->touched & CylinderDirtyTransform)) {
-        if (!(entry->dirty & CylinderDirtyTransform)) entry->savedTransform = entry->layer.transform;
+        if (!(entry->dirty & CylinderDirtyTransform)) {
+            entry->savedTransform = entry->layer.transform;
+            if (!CATransform3DIsIdentity(entry->savedTransform) && CylinderDebugOnce(entry, CylinderDebugLoggedTransform)) {
+                CylinderDebugLog(@"[capture] non-identity original transform {%@} on %@",
+                                 CylinderDebugDescribeTransform(entry->savedTransform), CylinderDebugEntryName(entry));
+            }
+            CylinderDebugCheckAnimations(entry, @"transform");
+        }
         entry->touched |= CylinderDirtyTransform;
     }
     entry->transform = transform;
@@ -91,7 +226,10 @@ CGPoint CylinderEntryPosition(CylinderEntry *entry)
 void CylinderEntrySetPosition(CylinderEntry *entry, CGPoint position)
 {
     if (!(entry->touched & CylinderDirtyPosition)) {
-        if (!(entry->dirty & CylinderDirtyPosition)) entry->savedPosition = entry->layer.position;
+        if (!(entry->dirty & CylinderDirtyPosition)) {
+            entry->savedPosition = entry->layer.position;
+            CylinderDebugCheckAnimations(entry, @"position");
+        }
         entry->touched |= CylinderDirtyPosition;
     }
     entry->position = position;
@@ -108,7 +246,13 @@ CGFloat CylinderEntryAlpha(CylinderEntry *entry)
 void CylinderEntrySetAlpha(CylinderEntry *entry, CGFloat alpha)
 {
     if (!(entry->touched & CylinderDirtyAlpha)) {
-        if (!(entry->dirty & CylinderDirtyAlpha)) entry->savedAlpha = entry->view.alpha;
+        if (!(entry->dirty & CylinderDirtyAlpha)) {
+            entry->savedAlpha = entry->view.alpha;
+            if (entry->savedAlpha < 0.999 && CylinderDebugOnce(entry, CylinderDebugLoggedAlpha)) {
+                CylinderDebugLog(@"[capture] original alpha %.3f on %@", entry->savedAlpha, CylinderDebugEntryName(entry));
+            }
+            CylinderDebugCheckAnimations(entry, @"alpha");
+        }
         entry->touched |= CylinderDirtyAlpha;
     }
     entry->alpha = alpha;
@@ -130,13 +274,6 @@ CGRect CylinderEntryFrame(CylinderEntry *entry)
         entry->hasCachedSize = NO;
     }
     return entry->cachedFrame;
-}
-
-/// A transform that only scales and translates in the plane, whose frame is its bounds scaled by m11 and m22.
-static inline BOOL CylinderTransformIsPlanarScale(CATransform3D t)
-{
-    return t.m12 == 0 && t.m13 == 0 && t.m14 == 0 && t.m21 == 0 && t.m23 == 0 && t.m24 == 0 &&
-           t.m31 == 0 && t.m32 == 0 && t.m34 == 0 && t.m44 == 1;
 }
 
 /// Every write that changes the transform also drops the cached frame, so the size is cached with it.
@@ -163,6 +300,10 @@ static inline void CylinderEntryBeginFrame(CylinderEntry *entry)
 {
     entry->touched = 0;
     entry->hasCachedFrame = NO;
+    if (entry->dirty) {
+        CylinderDebugCheckForeignWrites(entry, entry->dirty);
+        CylinderEntryReleaseChangedProperties(entry);
+    }
 }
 
 static inline void CylinderEntryFinishFrame(CylinderEntry *entry)
@@ -184,6 +325,27 @@ static void CylinderEntryAttach(CylinderEntry *entry, UIView *view, CylinderPage
     entry->baseFrame = view.frame;
     entry->viewHandle = (CylinderHandle){CylinderHandleKindView, entry};
     entry->layerHandle = (CylinderHandle){CylinderHandleKindLayer, entry};
+    entry->antialiased = NO;
+    entry->debugLogged = 0;
+}
+
+/// Core Animation draws a tilted or rotated layer's edges aliased unless the layer allows antialiasing, and
+/// SpringBoard leaves that off. An icon's artwork lives in its sublayers, so the whole tree needs it.
+static void CylinderAntialiasLayerTree(CALayer *layer, NSMutableArray<CALayer *> *changed, int depth)
+{
+    if (!layer.allowsEdgeAntialiasing) {
+        layer.allowsEdgeAntialiasing = YES;
+        [changed addObject:layer];
+    }
+    if (depth == 0) return;
+    for (CALayer *sublayer in layer.sublayers) CylinderAntialiasLayerTree(sublayer, changed, depth - 1);
+}
+
+/// The share of the view's opacity the effect is responsible for.
+static CGFloat CylinderEntryEffectAlpha(CylinderEntry *entry)
+{
+    if (!(entry->dirty & CylinderDirtyAlpha) || entry->savedAlpha <= 0) return 1;
+    return MIN(MAX(entry->writtenAlpha / entry->savedAlpha, 0), 1);
 }
 
 static NSMutableArray<CylinderPageContext *> *CylinderIdleContexts;
@@ -211,6 +373,10 @@ void CylinderEntryLoadGridCoordinate(CylinderEntry *entry)
     NSUInteger _maximumRowCount;
     /// -1 until resolved; 1 when SBIconCoordinate stores the row first.
     NSInteger _firstCoordinateFieldIsRow;
+    /// Layers whose edge antialiasing Cylinder turned on, turned off again when the page is released.
+    NSMutableArray<CALayer *> *_antialiasedLayers;
+    /// Icon containers on the page whose depth sorting Cylinder turned off, turned on again when the page is released.
+    NSMutableArray<CALayer *> *_unsortedContainers;
 }
 
 + (void)initialize
@@ -239,6 +405,9 @@ void CylinderEntryLoadGridCoordinate(CylinderEntry *entry)
     } else {
         context = [self new];
     }
+    CylinderDebugLog(@"[context] attach %@ window=%d transform={%@} alpha=%.3f (active contexts: %lu)", CylinderDebugDescribeView(page),
+                     page.window != nil, CylinderDebugDescribeTransform(page.layer.transform), page.alpha,
+                     (unsigned long)CylinderActiveContexts.count + 1);
 
     [context attachPage:page];
     [CylinderActiveContexts addObject:context];
@@ -249,21 +418,27 @@ void CylinderEntryLoadGridCoordinate(CylinderEntry *entry)
 {
     for (CylinderPageContext *context in CylinderActiveContexts) {
         if (context.lastFrame == frame) continue;
+#ifdef CYLINDER_SIMJECT
+        if (CylinderHarnessKeepOffRangePages) continue;
+#endif
         [context restoreLayout];
     }
 }
 
-+ (void)pageWillLayOutIcons:(SBIconListView *)page
++ (BOOL)pageWillLayOutIcons:(SBIconListView *)page
 {
     CylinderPageContext *context = [self existingContextForPage:page];
-    if (!context) return;
+    if (!context) return NO;
+    CylinderDebugLog(@"[context] SpringBoard lays out %@ mid-session, restoring and releasing it", CylinderDebugDescribeView(page));
     [context restore];
     [CylinderActiveContexts removeObjectIdenticalTo:context];
     [CylinderIdleContexts addObject:context];
+    return YES;
 }
 
 + (void)restoreAllContexts:(NSMutableArray<SBIconListView *> *)pages
 {
+    if (CylinderActiveContexts.count) CylinderDebugLog(@"[context] restoring %lu active contexts", (unsigned long)CylinderActiveContexts.count);
     for (CylinderPageContext *context in CylinderActiveContexts) {
         if (context->_retainedPage) [pages addObject:context->_retainedPage];
         [context restore];
@@ -305,6 +480,17 @@ void CylinderEntryLoadGridCoordinate(CylinderEntry *entry)
 - (void)prepareForFrame
 {
     if (!_iconViews || _subviewsChanged) {
+#ifdef CYLINDER_SIMJECT
+        if (CylinderHarnessAuditIcons) {
+            // Icons flying in after an unlock sit in a container inside the page, so only views outside it count.
+            NSUInteger moved = 0;
+            for (NSUInteger index = 0; index < _count; index++) {
+                if (_entries[index].dirty && ![_entries[index].view isDescendantOfView:_retainedPage]) moved++;
+            }
+            if (moved) CylinderHarnessLogLine([NSString stringWithFormat:@"[CylinderAudit] page %p restores %lu views that already left it", _retainedPage, (unsigned long)moved]);
+        }
+#endif
+        BOOL firstAttach = !_iconViews;
         // Undo the old layout's changes while its views are still retained, then adopt the new one.
         for (NSUInteger index = 0; index < _count; index++) CylinderEntryRestore(&_entries[index], CylinderDirtyAll);
         // The page enumerates its icon views wherever they are, including inside the container SpringBoard moves
@@ -324,6 +510,22 @@ void CylinderEntryLoadGridCoordinate(CylinderEntry *entry)
         _iconViews = iconViews;
         _subviewsChanged = NO;
         _count = count;
+        // A tilted page tilts the icons that joined it too.
+        if (_page.antialiased) [self antialiasEntry:&_page];
+        [self keepStackingOfIconContainers];
+
+        NSMutableString *unusual = [NSMutableString string];
+        for (UIView *iconView in iconViews) {
+            CALayer *layer = iconView.layer;
+            BOOL foreignSuperview = iconView.superview != _retainedPage;
+            BOOL transformed = !CATransform3DIsIdentity(layer.transform);
+            if (!foreignSuperview && !transformed && iconView.alpha >= 0.999 && !layer.animationKeys.count && !iconView.hidden) continue;
+            [unusual appendFormat:@"\n    %@ superview=%@ transform={%@} alpha=%.3f hidden=%d animations=%@", CylinderDebugDescribeView(iconView),
+                                  NSStringFromClass(iconView.superview.class), CylinderDebugDescribeTransform(layer.transform), iconView.alpha,
+                                  iconView.hidden, [layer.animationKeys componentsJoinedByString:@","] ?: @"none"];
+        }
+        CylinderDebugLog(@"[context] %@ icon views for %@: %lu%@", firstAttach ? @"adopted" : @"re-adopted (subviews changed)",
+                         CylinderDebugDescribeView(_retainedPage), (unsigned long)count, unusual);
     }
 
     for (NSUInteger index = 0; index < _count; index++) CylinderEntryBeginFrame(&_entries[index]);
@@ -344,6 +546,7 @@ void CylinderEntryLoadGridCoordinate(CylinderEntry *entry)
 
 - (void)subviewWillLeave:(UIView *)subview
 {
+    CylinderDebugLog(@"[context] %@ leaves %@ mid-session", CylinderDebugDescribeView(subview), CylinderDebugDescribeView(_retainedPage));
     for (NSUInteger index = 0; index < _count; index++) {
         if (_entries[index].view != subview) continue;
         CylinderEntryRestore(&_entries[index], CylinderDirtyAll);
@@ -354,12 +557,72 @@ void CylinderEntryLoadGridCoordinate(CylinderEntry *entry)
 
 - (void)subviewDidJoin
 {
+    CylinderDebugLog(@"[context] subview joined %@ mid-session", CylinderDebugDescribeView(_retainedPage));
     _subviewsChanged = YES;
+}
+
++ (void)iconViewWillMove:(UIView *)iconView
+{
+    for (CylinderPageContext *context in CylinderActiveContexts) {
+        for (NSUInteger index = 0; index < context->_count; index++) {
+            if (context->_entries[index].view != iconView) continue;
+            CylinderDebugLog(@"[context] %@ moves out of %@ mid-session", CylinderDebugDescribeView(iconView),
+                             NSStringFromClass(iconView.superview.class));
+            // Undo the effect while the view is still where it was applied. Otherwise it carries the effect's
+            // values to its next page, which saves them as that icon's originals.
+            CylinderEntryRestore(&context->_entries[index], CylinderDirtyAll);
+            context->_subviewsChanged = YES;
+            break;
+        }
+    }
+}
+
+- (void)antialiasEntry:(CylinderEntry *)entry
+{
+    if (!_antialiasedLayers) _antialiasedLayers = [NSMutableArray array];
+    entry->antialiased = YES;
+    if (entry != &_page) {
+        CylinderAntialiasLayerTree(entry->layer, _antialiasedLayers, 8);
+        return;
+    }
+    // The page draws nothing itself, but its transform tilts every icon on it.
+    for (NSUInteger index = 0; index < _count; index++) {
+        if (!_entries[index].antialiased) [self antialiasEntry:&_entries[index]];
+    }
+}
+
+/// After an unlock SpringBoard flies the icons in from a container on the page that sorts them by a zPosition it
+/// springs with staggered timing. Effects that overlap icons would swap their stacking many times during the
+/// fly-in, so while the page is in a session the container keeps the order the page itself draws them in.
+- (void)keepStackingOfIconContainers
+{
+    for (UIView *iconView in _iconViews) {
+        UIView *container = iconView.superview;
+        if (!container || container == _retainedPage || ![container isDescendantOfView:_retainedPage]) continue;
+        CALayer *layer = container.layer;
+        if (![layer respondsToSelector:@selector(setSortsSublayers:)] || !layer.sortsSublayers) continue;
+        layer.sortsSublayers = NO;
+        if (!_unsortedContainers) _unsortedContainers = [NSMutableArray array];
+        [_unsortedContainers addObject:layer];
+    }
+}
+
+- (CGFloat)effectAlphaOfView:(UIView *)view
+{
+    CGFloat alpha = CylinderEntryEffectAlpha(&_page);
+    for (NSUInteger index = 0; index < _count; index++) {
+        if (_entries[index].view == view) return alpha * CylinderEntryEffectAlpha(&_entries[index]);
+    }
+    return alpha;
 }
 
 - (void)restore
 {
     [self restoreLayout];
+    for (CALayer *layer in _antialiasedLayers) layer.allowsEdgeAntialiasing = NO;
+    [_antialiasedLayers removeAllObjects];
+    for (CALayer *layer in _unsortedContainers) layer.sortsSublayers = YES;
+    [_unsortedContainers removeAllObjects];
     _iconViews = nil;
     _retainedPage = nil;
     _page.view = nil;

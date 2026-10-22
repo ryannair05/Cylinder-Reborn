@@ -15,7 +15,13 @@ BUNDLE_NAME = CylinderSettings
 CylinderSettings_FILES = CLAlignedTableViewCell.m CLDonateController.m CLEffect.m CLEffectsController.m CLFormulasController.m CLTwitterCell.m CylinderSettings.m
 CylinderSettings_INSTALL_PATH = /Library/PreferenceBundles
 
+ifneq ($(CYLINDER_SIMJECT),)
+# Preferences.framework is present in the runtime but is not shipped in the
+# simulator SDK. Settings resolves these Objective-C classes when loading the bundle.
+CylinderSettings_LDFLAGS += -Wl,-undefined,dynamic_lookup
+else
 CylinderSettings_PRIVATE_FRAMEWORKS = Preferences
+endif
 
 include $(THEOS_MAKE_PATH)/bundle.mk
 

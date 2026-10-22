@@ -62,6 +62,10 @@ struct CylinderEntry {
     CGSize cachedSize;
     CylinderHandle viewHandle;
     CylinderHandle layerHandle;
+    /// The view's layers draw antialiased edges, which a transform that tilts or rotates them needs.
+    BOOL antialiased;
+    /// Debug build: which unusual captures were already logged since the entry was attached.
+    uint8_t debugLogged;
 };
 
 /// Per-page state for one scroll session. The page's icon views are retained so entries never dangle.
@@ -84,8 +88,8 @@ struct CylinderEntry {
 /// Undoes the changes on every page that `frame` did not run an effect on, keeping their sessions.
 + (void)restoreContextsOutsideFrame:(NSUInteger)frame;
 /// SpringBoard is about to lay `page` out again, which invalidates the geometry its context saved, so the
-/// page is restored and released. The next frame starts it from the new layout.
-+ (void)pageWillLayOutIcons:(SBIconListView *)page;
+/// page is restored and released. The next frame starts it from the new layout. Returns whether it had a context.
++ (BOOL)pageWillLayOutIcons:(SBIconListView *)page;
 
 /// The page-coordinator frame that last ran an effect on the page.
 @property (nonatomic) NSUInteger lastFrame;
@@ -104,6 +108,12 @@ struct CylinderEntry {
 - (void)subviewWillLeave:(UIView *)subview;
 /// SpringBoard added a subview to the page, which the next frame adopts.
 - (void)subviewDidJoin;
+/// SpringBoard is moving `iconView` to another superview. Icon views can leave from outside their page,
+/// such as the container they fly in from after an unlock, so this catches what -subviewWillLeave: cannot.
++ (void)iconViewWillMove:(UIView *)iconView;
+
+/// How much the effect multiplied `view`'s opacity, page included, so a flight to it can fade along.
+- (CGFloat)effectAlphaOfView:(UIView *)view;
 
 /// Grid metrics are stable for a scroll session, so SpringBoard's layout queries run once.
 @property (nonatomic, readonly) NSUInteger maximumIconCount;

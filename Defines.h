@@ -1,6 +1,8 @@
 #import <UIKit/UIKit.h>
 #import <os/log.h>
+#ifndef CYLINDER_SIMJECT
 #import <substrate.h>
+#endif
 
 #define CLLog(format, ...) os_log(OS_LOG_DEFAULT, "Cylinder: %@", [NSString stringWithFormat: format, ## __VA_ARGS__])
 #define Log CLLog

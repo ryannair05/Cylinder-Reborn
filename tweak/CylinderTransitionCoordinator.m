@@ -1,10 +1,16 @@
 #import "CylinderTransitionCoordinator.h"
 
 #import "tweak.h"
+#import "CylinderDebug.h"
 
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 
+#ifdef CYLINDER_SIMJECT
+extern BOOL CylinderHarnessDisableHandoff;
+extern BOOL CylinderHarnessDisableSpringBoardHide;
+void CylinderHarnessLogLine(NSString *line);
+#endif
 
 typedef struct {
     double m[3][3];
@@ -123,9 +129,14 @@ typedef struct {
     __unsafe_unretained CALayer *layer;
     __unsafe_unretained CALayer *source;
     CGPoint point;
+    /// The axes the match-move moves the layer along. A folder's tracks only x, leaving y to the layer's position.
+    BOOL appliesX;
+    BOOL appliesY;
 } CylinderMatchMove;
 
-static BOOL CylinderFindMatchMove(CALayer *layer, CALayer *icon, CylinderMatchMove *result)
+/// With `icon`, only a match-move that tracks the icon counts: its source lies inside the icon or, when
+/// `sourceMayHoldIcon` is set, is the list the icon sits on, which is how folders track their icon.
+static BOOL CylinderFindMatchMove(CALayer *layer, CALayer *icon, BOOL sourceMayHoldIcon, CylinderMatchMove *result)
 {
     static Class matchMoveClass;
     static dispatch_once_t once;
@@ -140,10 +151,14 @@ static BOOL CylinderFindMatchMove(CALayer *layer, CALayer *icon, CylinderMatchMo
 
             id source = [animation valueForKey:@"sourceLayer"];
             NSArray<NSValue *> *points = [animation valueForKey:@"sourcePoints"];
-            if (![source isKindOfClass:CALayer.class] || (icon && !CylinderLayerIsInside(source, icon))) continue;
+            if (![source isKindOfClass:CALayer.class]) continue;
+            if (icon && !CylinderLayerIsInside(source, icon) && !(sourceMayHoldIcon && CylinderLayerIsInside(icon, source))) continue;
             if (![points isKindOfClass:NSArray.class] || points.count == 0) continue;
 
-            *result = (CylinderMatchMove){candidate, source, points.firstObject.CGPointValue};
+            NSNumber *appliesX = [animation valueForKey:@"appliesX"];
+            NSNumber *appliesY = [animation valueForKey:@"appliesY"];
+            *result = (CylinderMatchMove){candidate, source, points.firstObject.CGPointValue,
+                                          appliesX ? appliesX.boolValue : YES, appliesY ? appliesY.boolValue : YES};
             return YES;
         }
     }
@@ -203,6 +218,10 @@ static BOOL CylinderLayerIsAnimating(CALayer *layer, int depth)
     CALayer *layer = _layer;
     if (!layer) return;
     _layer = nil;
+#ifdef CYLINDER_SIMJECT
+    CylinderHarnessLogLine([NSString stringWithFormat:@"[CylinderTx] handBack opacity %.2f -> %@", layer.opacity,
+                            _restoresOpacity ? [NSString stringWithFormat:@"%.2f", _opacity] : @"left to SpringBoard"]);
+#endif
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
@@ -220,7 +239,10 @@ static BOOL CylinderLayerIsAnimating(CALayer *layer, int depth)
 
 /// SpringBoard runs one icon zoom at a time, so a single active transition needs no per-animator storage.
 static SBIcon *CylinderTransitionIcon;
-static __weak SBIconView *CylinderFlyingIconView;
+/// The animator-owned view that flies to the icon: an app's icon view, or the folder view of a closing folder.
+static __weak UIView *CylinderFlyingView;
+/// A folder's flight moves only through its match-move, whose source is the list holding the folder icon.
+static BOOL CylinderFlightIsFolder;
 static __weak CALayer *CylinderSteeredLayer;
 static CATransform3D CylinderSavedSublayerTransform;
 static float CylinderSavedOpacity;
@@ -251,6 +273,7 @@ static void CylinderReleaseSteering(void)
 static void CylinderTakeLayer(CALayer *layer)
 {
     if (CylinderSteeredLayer == layer) return;
+    CylinderDebugLog(@"[transition] steering layer %@<%p> (delegate %@)", NSStringFromClass(layer.class), layer, NSStringFromClass([layer.delegate class]));
     CylinderReleaseSteering();
     [CylinderHandBack finish];
     CylinderHandBack = nil;
@@ -259,24 +282,49 @@ static void CylinderTakeLayer(CALayer *layer)
     CylinderSavedOpacity = layer.opacity;
 }
 
-void CylinderTransitionPrepared(SBIconView *iconView)
+static void CylinderTransitionBegin(SBIcon *icon, UIView *flyingView, BOOL folder)
 {
     CylinderReleaseSteering();
-    CylinderTransitionIcon = iconView.icon;
-    CylinderFlyingIconView = iconView;
+    CylinderTransitionIcon = icon;
+    CylinderFlyingView = flyingView;
+    CylinderFlightIsFolder = folder;
     CylinderBaselineIconView = nil;
     CylinderTargetPageOffsetX = NAN;
 }
 
-void CylinderTransitionWillCleanup(SBIconView *iconView)
+void CylinderTransitionPrepared(SBIconView *iconView)
 {
-    if (CylinderFlyingIconView != iconView) return;
+    CylinderDebugLog(@"[transition] prepared flying icon %@ (previous icon still set: %d)", CylinderDebugDescribeView(iconView), CylinderTransitionIcon != nil);
+    CylinderTransitionBegin(iconView.icon, iconView, NO);
+}
+
+void CylinderTransitionFolderPrepared(SBFolderIconZoomAnimator *animator)
+{
+    SBIconView *iconView = animator.targetIconView;
+    UIView *folderView = animator.defaultTargetIconContainerView;
+#ifdef CYLINDER_SIMJECT
+    CylinderHarnessLogLine([NSString stringWithFormat:@"[CylinderTx] folder zoom prepared folderView=%@ icon=%@", folderView, iconView]);
+#endif
+    CylinderDebugLog(@"[transition] prepared folder zoom %@ into %@ (previous icon still set: %d)", CylinderDebugDescribeView(folderView),
+                     CylinderDebugDescribeView(iconView), CylinderTransitionIcon != nil);
+    if (!iconView.icon || !folderView) return;
+    CylinderTransitionBegin(iconView.icon, folderView, YES);
+}
+
+static void CylinderTransitionFlightWillEnd(UIView *flyingView)
+{
+    if (!flyingView || CylinderFlyingView != flyingView) {
+        CylinderDebugLog(@"[transition] cleanup for %@ ignored, tracking %@", CylinderDebugDescribeView(flyingView), CylinderDebugDescribeView(CylinderFlyingView));
+        return;
+    }
 
     BOOL settledElsewhere = !isnan(CylinderTargetPageOffsetX) &&
         fabs(CylinderContentOffsetX - CylinderTargetPageOffsetX) >= CylinderPageWidth / 2;
     CylinderMatchMove match;
     CALayer *layer = CylinderSteeredLayer;
-    if (!layer && CylinderFindMatchMove(iconView.layer, nil, &match)) layer = match.layer;
+    if (!layer && CylinderFindMatchMove(flyingView.layer, nil, NO, &match)) layer = match.layer;
+    CylinderDebugLog(@"[transition] cleanup %@ hidden=%d settledElsewhere=%d steered=%d", CylinderDebugDescribeView(flyingView),
+                     CylinderFlightHidden, settledElsewhere, CylinderSteeredLayer != nil);
     if ((CylinderFlightHidden || settledElsewhere) && layer) {
         CylinderTakeLayer(layer);
         CylinderHandBack = [[CylinderPendingHandBack alloc] initWithLayer:layer
@@ -287,13 +335,35 @@ void CylinderTransitionWillCleanup(SBIconView *iconView)
     }
     CylinderReleaseSteering();
     CylinderTransitionIcon = nil;
-    CylinderFlyingIconView = nil;
+    CylinderFlyingView = nil;
     CylinderBaselineIconView = nil;
+}
+
+void CylinderTransitionWillCleanup(SBIconView *iconView)
+{
+    CylinderTransitionFlightWillEnd(iconView);
+}
+
+void CylinderTransitionFolderWillCleanup(SBFolderIconZoomAnimator *animator)
+{
+    // Each zoom cleans up once it finishes, and only the tracked one may end the flight.
+    if (CylinderFlyingView && CylinderFlyingView == animator.defaultTargetIconContainerView) {
+        CylinderTransitionFlightWillEnd(CylinderFlyingView);
+    }
 }
 
 void CylinderTransitionWillBeHiddenBySpringBoard(void)
 {
+    CylinderDebugLog(@"[transition] SpringBoard hides the zoom-down view, steered=%d", CylinderSteeredLayer != nil);
+#ifdef CYLINDER_SIMJECT
+    CylinderHarnessLogLine([NSString stringWithFormat:@"[CylinderTx] springBoardWillHide steered=%d pending=%d hidden=%d",
+                            CylinderSteeredLayer != nil, CylinderHandBack != nil, CylinderFlightHidden]);
+    if (CylinderHarnessDisableSpringBoardHide) return;
+#endif
     [CylinderHandBack leaveOpacity];
+    // The switcher hides its own zoom-down view, which only an app's flight uses; a folder closing on the
+    // same Home press keeps its flight.
+    if (CylinderFlightIsFolder) return;
     CALayer *layer = CylinderSteeredLayer;
     if (layer) {
         [CylinderHandBack finish];
@@ -306,7 +376,7 @@ void CylinderTransitionWillBeHiddenBySpringBoard(void)
     CylinderHasMatchMove = NO;
     CylinderFlightHidden = NO;
     CylinderTransitionIcon = nil;
-    CylinderFlyingIconView = nil;
+    CylinderFlyingView = nil;
     CylinderBaselineIconView = nil;
     CylinderTargetPageOffsetX = NAN;
 }
@@ -314,11 +384,14 @@ void CylinderTransitionWillBeHiddenBySpringBoard(void)
 SBIconView *CylinderTransitionTargetOnPage(SBIconListView *listView)
 {
     if (!CylinderTransitionIcon) return nil;
+#ifdef CYLINDER_SIMJECT
+    if (CylinderHarnessDisableHandoff) return nil;
+#endif
 
-    SBIconView *flyingIconView = CylinderFlyingIconView;
+    UIView *flyingView = CylinderFlyingView;
     SBIconView *targetIconView = [listView displayedIconViewForIcon:CylinderTransitionIcon];
     // Some transitions animate the Home Screen icon itself, which already inherits the page transform.
-    if (!flyingIconView || targetIconView == flyingIconView) return nil;
+    if (!flyingView || targetIconView == flyingView) return nil;
     return targetIconView;
 }
 
@@ -327,7 +400,13 @@ void CylinderTransitionCaptureBaseline(SBIconView *iconView, CGFloat pageOffsetX
 {
     CylinderTargetPageOffsetX = pageOffsetX;
     CylinderBaselineToScreen = CylinderLayerToScreen(iconView.layer);
-    CylinderHasMatchMove = CylinderFindMatchMove(CylinderFlyingIconView.layer, iconView.layer, &CylinderActiveMatchMove);
+    CylinderHasMatchMove = CylinderFindMatchMove(CylinderFlyingView.layer, iconView.layer, CylinderFlightIsFolder, &CylinderActiveMatchMove);
+#ifdef CYLINDER_SIMJECT
+    if (CylinderFlightIsFolder) {
+        CylinderHarnessLogLine([NSString stringWithFormat:@"[CylinderTx] folder baseline icon=%p matchMove=%d layer=%@ source=%@",
+                                iconView, CylinderHasMatchMove, CylinderActiveMatchMove.layer.delegate, CylinderActiveMatchMove.source.delegate]);
+    }
+#endif
     if (CylinderHasMatchMove && CylinderActiveMatchMove.source != iconView.layer) {
         CylinderSourceBaselineToScreen = CylinderLayerToScreen(CylinderActiveMatchMove.source);
     } else {
@@ -336,10 +415,10 @@ void CylinderTransitionCaptureBaseline(SBIconView *iconView, CGFloat pageOffsetX
     CylinderBaselineIconView = iconView;
 }
 
-void CylinderTransitionFollow(SBIconView *iconView)
+void CylinderTransitionFollow(SBIconView *iconView, CGFloat effectAlpha)
 {
-    SBIconView *flyingIconView = CylinderFlyingIconView;
-    if (!flyingIconView || CylinderBaselineIconView != iconView) return;
+    UIView *flyingView = CylinderFlyingView;
+    if (!flyingView || CylinderBaselineIconView != iconView) return;
 
     CylinderHomography iconToScreen = CylinderLayerToScreen(iconView.layer);
     CALayer *layer;
@@ -361,8 +440,12 @@ void CylinderTransitionFollow(SBIconView *iconView)
             return;
         }
         layer = CylinderActiveMatchMove.layer;
+        // Along an axis the match-move leaves alone, the layer stays at its own position wherever the source goes.
+        if (!CylinderActiveMatchMove.appliesX) renderedPosition.x = stockPosition.x = layer.position.x;
+        if (!CylinderActiveMatchMove.appliesY) renderedPosition.y = stockPosition.y = layer.position.y;
     } else {
-        layer = flyingIconView.superview.layer;
+        // Without its match-move a folder has nothing that places it, so it is left alone.
+        layer = CylinderFlightIsFolder ? nil : flyingView.superview.layer;
         if (!layer) return;
         renderedPosition = layer.position;
         stockPosition = layer.position;
@@ -390,7 +473,7 @@ void CylinderTransitionFollow(SBIconView *iconView)
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     layer.sublayerTransform = CylinderTransformFromHomography(sublayer);
-    layer.opacity = CylinderSavedOpacity * iconView.alpha * iconView.superview.alpha;
+    layer.opacity = CylinderSavedOpacity * effectAlpha;
     [CATransaction commit];
 }
 
@@ -408,20 +491,38 @@ void CylinderTransitionFinishFrame(CGFloat contentOffsetX, CGFloat pageWidth)
     CylinderTransitionHideIfTargetIsGone();
 }
 
+/// The icon view a match-move tracks: its source itself, or the icon on the list a folder's match-move follows.
+static SBIconView *CylinderMatchMoveIconView(CylinderMatchMove match)
+{
+    UIView *source = (UIView *)match.source.delegate;
+    if (![source isKindOfClass:UIView.class]) return nil;
+    if ([source respondsToSelector:@selector(icon)]) {
+        SBIconView *iconView = (SBIconView *)source;
+        return iconView.icon == CylinderTransitionIcon ? iconView : nil;
+    }
+    if (@available(iOS 13, *)) {
+        if (CylinderFlightIsFolder && [source respondsToSelector:@selector(displayedIconViewForIcon:)]) {
+            return [(SBIconListView *)source displayedIconViewForIcon:CylinderTransitionIcon];
+        }
+    }
+    return nil;
+}
+
 void CylinderTransitionHideIfTargetIsGone(void)
 {
-    SBIconView *flyingIconView = CylinderFlyingIconView;
+    UIView *flyingView = CylinderFlyingView;
     CylinderMatchMove match;
-    if (!CylinderTransitionIcon || !flyingIconView || !CylinderFindMatchMove(flyingIconView.layer, nil, &match)) return;
+    if (!CylinderTransitionIcon || !flyingView || !CylinderFindMatchMove(flyingView.layer, nil, NO, &match)) return;
 
     BOOL visible = NO;
-    SBIconView *source = (SBIconView *)match.source.delegate;
-    if ([source isKindOfClass:UIView.class] && [source respondsToSelector:@selector(icon)] && source.icon == CylinderTransitionIcon) {
+    SBIconView *source = CylinderMatchMoveIconView(match);
+    if (source) {
         UIWindow *window = source.window;
         visible = window && CGRectIntersectsRect([source convertRect:source.bounds toView:nil], window.bounds);
     }
 
     if (!visible) {
+        if (!CylinderFlightHidden) CylinderDebugLog(@"[transition] target icon off screen, hiding flight %@", CylinderDebugDescribeView(source));
         CylinderTakeLayer(match.layer);
         match.layer.opacity = 0;
         CylinderFlightHidden = YES;

@@ -3,7 +3,10 @@
 #import "../lua/lualib.h"
 // #import "macros.h"
 #import "lua_UIView.h"
+#import "CylinderDebug.h"
+#ifndef CYLINDER_SIMJECT
 #import <libroot.h>
+#endif
 
 #define LOG_DIR @"/var/mobile/Library/Logs/Cylinder/"
 #define LOG_PATH "errors.log"
@@ -100,6 +103,11 @@ static void create_state(void)
     // incrementally, so a full collection cannot stall one frame.
     lua_gc(L, LUA_GCGEN);
 
+    #ifdef CYLINDER_SIMJECT
+    // Deterministic randomness lets the simulator harness compare renders across builds.
+    luaL_dostring(L, "math.randomseed(1)");
+    #endif
+
     // LuaJIT and 64-bit OS X don't play well together http://luajit.org/install.html#embed
     // since we're embedding in SpringBoard we don't have the luxury of using linker flags
     // turning off the JIT fixes all the issues, unfortunately this mean C callbacks cannot be used
@@ -167,7 +175,8 @@ static void set_environment(const char *script)
 }
 
 /// Writes the path of a file under /Library/Cylinder, given as a format and its arguments, into `out`, which
-/// holds PATH_MAX bytes. libroot resolves the jailbreak root on rootful, rootless and roothide.
+/// holds PATH_MAX bytes. libroot resolves the jailbreak root on rootful, rootless and roothide; simulator
+/// builds read the copy in the simulator's data directory.
 static const char *script_path(char *out, const char *format, ...)
 {
     char relative[PATH_MAX];
@@ -177,7 +186,12 @@ static const char *script_path(char *out, const char *format, ...)
     vsnprintf(relative + length, sizeof(relative) - length, format, args);
     va_end(args);
 
+    #ifdef CYLINDER_SIMJECT
+    snprintf(out, PATH_MAX, "%s%s", NSHomeDirectory().fileSystemRepresentation, relative);
+    return out;
+    #else
     return libroot_dyn_jbrootpath(relative, out);
+    #endif
 }
 
 static int open_script(const char *script)
@@ -185,6 +199,10 @@ static int open_script(const char *script)
     char buffer[PATH_MAX];
     const char *path = script_path(buffer, "%s.lua", script);
 
+    #ifdef CYLINDER_SIMJECT
+    NSLog(@"[CylinderSimject] loading Lua script %s (exists: %@)", path,
+          access(path, F_OK) == 0 ? @"YES" : @"NO");
+    #endif
 
     //load our file and save the function we want to call
     BOOL loaded = luaL_loadfile(L, path) == 0;
@@ -208,6 +226,9 @@ static int open_script(const char *script)
     }
     else 
     {
+        #ifdef CYLINDER_SIMJECT
+        NSLog(@"[CylinderSimject] Lua load failed for %s: %s", path, lua_tostring(L, -1));
+        #endif
         write_error(lua_tostring(L, -1));
     }
 
@@ -379,6 +400,7 @@ inline void write_error(const char *error)
 static void write_file(const char *msg, const char *filename)
 {
     Log(@"wrote to file %s: %s", filename, msg);
+    CylinderDebugLog(@"[lua %s] %s", filename, msg);
 
     NSString *path = [LOG_DIR stringByAppendingPathComponent:[NSString stringWithUTF8String:filename]];
 

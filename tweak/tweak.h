@@ -59,6 +59,7 @@ NS_CLASS_AVAILABLE_IOS(4_0) @interface SBIconListView : UIView
 @end
 
 NS_CLASS_AVAILABLE_IOS(4_0) @interface SBFolderView : UIView
+@property (nonatomic, readonly) UIScrollView *scrollView;
 - (void)getLeadingVisiblePageIndex:(NSInteger *)leadingPageIndex
          trailingVisiblePageIndex:(NSInteger *)trailingPageIndex API_AVAILABLE(ios(14.0));
 - (SBIconListView *)iconListViewForPageIndex:(NSInteger)pageIndex API_AVAILABLE(ios(14.0));
@@ -67,4 +68,17 @@ NS_CLASS_AVAILABLE_IOS(4_0) @interface SBFolderView : UIView
 - (void)_addScrollingCompletionBlock:(dispatch_block_t)completion API_AVAILABLE(ios(11.0));
 - (SBIconVisibilityHandling)iconVisibilityHandling API_AVAILABLE(ios(13.0));
 - (void)performWhenScrollingEndsUsingBlock:(dispatch_block_t)completion API_AVAILABLE(ios(11.0));
+/// Page indices of the first and last icon list; the Today view and App Library pages lie outside them.
+- (NSInteger)firstIconPageIndex;
+- (NSInteger)lastIconPageIndex;
+@end
+
+/// Zooms an open folder's view into or out of its icon. The folder view follows the icon's page through
+/// a CAMatchMoveAnimation, which `_setupMatchMoveAnimation` adds and `_cleanupAnimation` removes.
+@interface SBFolderIconZoomAnimator : NSObject
+/// Declared as an SBFolderIconView before iOS 13.
+@property (nonatomic, readonly) SBIconView *targetIconView API_AVAILABLE(ios(11.0));
+@property (nonatomic, readonly) UIView *defaultTargetIconContainerView API_AVAILABLE(ios(11.0));
+- (void)_setupMatchMoveAnimation API_AVAILABLE(ios(12.0));
+- (void)_cleanupAnimation API_AVAILABLE(ios(11.0));
 @end

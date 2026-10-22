@@ -85,3 +85,10 @@ make do THEOS_DEVICE_IP=iphone_wifi_ip_here
 ```
 
 Your device needs OpenSSH installed for the installation to work.
+
+## Testing in the iOS Simulator
+
+`make simject` builds the tweak and its settings for the simulator and installs them into a booted iPhone simulator.
+Set `SIMULATOR_UDID` to pick a specific simulator. It needs [simject](https://github.com/angelXwind/simject) set up in `/opt/simject` with `resim` on your `PATH`, and
+`jq`. The first run also builds [preferenceloader-sim](https://github.com/PoomSmart/preferenceloader-sim) into
+`/opt/simject`, so Cylinder's settings appear in the simulator's Settings app under General.

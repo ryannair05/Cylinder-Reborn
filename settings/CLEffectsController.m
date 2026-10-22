@@ -3,7 +3,9 @@
 #import "CylinderSettings.h"
 
 #import "CLAlignedTableViewCell.h"
+#ifndef CYLINDER_SIMJECT
 #import <libroot.h>
+#endif
 
 static CLEffectsController *sharedController = nil;
 
@@ -106,7 +108,11 @@ static CLEffectsController *sharedController = nil;
     self.effects = [NSMutableArray array];
     CylinderSettingsListController *ctrl = (CylinderSettingsListController*)self.parentController;
     // Matches scripts_directory() in the tweak: libroot resolves the jailbreak root on rootful, rootless and roothide.
+    #ifdef CYLINDER_SIMJECT
+    [self addEffectsFromDirectory:[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Cylinder"]];
+    #else
     [self addEffectsFromDirectory:JBROOT_PATH_NSSTRING(@"/Library/Cylinder")];
+    #endif
    
     NSArray *effects = [ctrl.settings objectForKey:PrefsEffectKey];
     self.selectedEffects = [NSMutableArray array];
